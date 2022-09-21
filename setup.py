@@ -8,5 +8,5 @@ setup(
     author_email='valmispild@gmail.com, igor.s.krivenko@gmail.com',
     description='Implementation of the time-dependent dual TRILEX theory',
     packages=['tddt'],
-    install_requires=['numpy >= 1.12.0'],
+    install_requires=['numpy >= 1.12.0', 'mpmath >= 1.2.0'],
 )

@@ -3,6 +3,7 @@ import pytest
 from itertools import product
 import numpy as np
 from numpy.testing import assert_array_almost_equal
+from scipy.linalg import expm  # Matrix exponential
 
 import triqs.utility.mpi  # noqa: F401
 from triqs.gf import MeshReTime, Gf
@@ -47,11 +48,11 @@ A = 0.1
 
 
 # time-mesh
-t_max = 5.0
-n_t = 10
+t_max = 20.0
+n_t = 21
 t_mesh = MeshReTime(0, t_max, n_t)
 tt_mesh = MeshProduct(t_mesh, t_mesh) # A 2D mesh as a direct product of t_mesh with itself
-m_interp = MeshReTime(0, t_max, 15)
+m_interp = MeshReTime(0, t_max, n_t)
 
 
 #k-mesh
@@ -60,7 +61,7 @@ bz = BrillouinZone(lat)  # Brillouin zone of the lattice
 n_k = 3 # Number of k-points along each dimension
 bz_mesh = MeshBrillouinZone(bz, n_k) # k-mesh on 1BZ; 0 - 2pi
 
-
+#tk_mesh = MeshProduct(t_mesh, bz_mesh)
 ttk_mesh = MeshProduct(t_mesh, t_mesh, bz_mesh)
 
 
@@ -89,10 +90,21 @@ def V(axis,sign,t):
 
 # Lattice despersion
 def eps_k(t1,t2,k,time):
-    eps_k = -2.0*t1*(np.cos(k[0]-A*np.cos(time))+np.cos(k[1]-A*np.cos(time)))\
+    eps_k = -2.0*t1*(np.cos(k[0]-A*np.cos(time))+np.cos(k[1]-A*np.cos(time))) \
             -4.0*t2*np.cos(k[0]-A*np.cos(time))*np.cos(k[1]-A*np.cos(time))
     return eps_k
 
+eps_loc = np.zeros(n_t)
+
+for time in t_mesh:
+    for k in bz_mesh:
+        eps_loc[time.index] += eps_k(t1,t2,k,time.value)
+        #print(time.value)
+        #print(np.cos(time.value))
+
+eps_loc = eps_loc/(n_k*n_k)
+
+print('eps_loc: ', eps_loc)
 
 # Make Keldysh GF of a single fermion with energy `eps` and occupation number `occup_n`
 def make_g(eps, occup_n, t_mesh):
@@ -176,8 +188,8 @@ gf = compute_keldysh_gf(gf_struct,
                         t_mesh,
                         params)
 
-gf_imp = KeldyshGF(mesh=tt_mesh, arg_index_shapes=((2,), (2,)))
-#print(gf_imp[FW,FW][0,0].data.shape)
+gimp = KeldyshGF(mesh=tt_mesh, arg_index_shapes=((2,), (2,)))
+#print(gimp[FW,FW][0,0].data.shape)
 #print(gf['up'][FW,FW].data.shape)
 #print(gf)
 #print(gf['up'])
@@ -188,8 +200,8 @@ gf_imp = KeldyshGF(mesh=tt_mesh, arg_index_shapes=((2,), (2,)))
 
 for br1 in branches:
     for br2 in branches:
-        gf_imp[br1,br2][0,0].data[...] = gf['up'][br1,br2].data[...,0,0] # Is there a better way to deal with that (gf['up/dn'])?
-        gf_imp[br1,br2][1,1].data[...] = gf['dn'][br1,br2].data[...,0,0]
+        gimp[br1,br2][0,0].data[...] = gf['up'][br1,br2].data[...,0,0] # Is there a better way to deal with that (gf['up/dn'])?
+        gimp[br1,br2][1,1].data[...] = gf['dn'][br1,br2].data[...,0,0]
 
 
 # GF of a noncorrelated site
@@ -197,7 +209,7 @@ eps = -mu
 occup_n = 0.5
 gf_non_corr_site = make_g(eps, occup_n, t_mesh)
 
-#print('gf_imp: ', gf_imp.components)
+#print('gimp: ', gimp.components)
 #print('gf: ', gf['up'][FW,BW].data.shape)
 #print('dt: ', dt.data.shape)
 
@@ -215,188 +227,82 @@ for sp in (0,1):
                 z2 = ContourPoint(br2, time2)
                 #delta[z1,z2] = dt.data[time1.linear_index]*gf_non_corr_site[z1,z2]*dt.data[time2.linear_index] # Sum over i=(1,2,3,4) is missing!!!
 
-                delta[z1,z2][sp,sp] = V('x',+1,time1.linear_index)*gf_non_corr_site[z1,z2]*V('x',-1,time2.linear_index) \
-                                    + V('x',-1,time1.linear_index)*gf_non_corr_site[z1,z2]*V('x',+1,time2.linear_index) \
-                                    + V('y',-1,time1.linear_index)*gf_non_corr_site[z1,z2]*V('y',+1,time2.linear_index) \
-                                    + V('y',+1,time1.linear_index)*gf_non_corr_site[z1,z2]*V('y',-1,time2.linear_index)
-
-#exit()
-####
-eps_tild_k = KeldyshGF(mesh=ttk_mesh, arg_index_shapes=((2,), (2,)))
-gf_imp_on_k_mesh = KeldyshGF(mesh=ttk_mesh, arg_index_shapes=((2,), (2,)))
-eps_tild_gf_imp_vareps = KeldyshGF(mesh=ttk_mesh, arg_index_shapes=((2,), (2,)))
-eps_tild_gf_imp_vareps_test = KeldyshGF(mesh=ttk_mesh, arg_index_shapes=((2,), (2,)))
+                delta[z1,z2][sp,sp] = V('x',+1,time1.linear_index) * gf_non_corr_site[z1,z2] * V('x',-1,time2.linear_index) \
+                                      + V('x',-1,time1.linear_index) * gf_non_corr_site[z1,z2] * V('x',+1,time2.linear_index) \
+                                      + V('y',-1,time1.linear_index) * gf_non_corr_site[z1,z2] * V('y',+1,time2.linear_index) \
+                                      + V('y',+1,time1.linear_index) * gf_non_corr_site[z1,z2] * V('y',-1,time2.linear_index)
 
 
-#eps_k_test = KeldyshGF(mesh=ttk_mesh, arg_index_shapes=((2,), (2,)))
-#print(eps_k_test[FW,FW].data.shape)
-#print('is Hermitian:',is_hermitian(eps_k_test))
-#for br1 in branches:
-#    for br2 in branches:
-#        for k in (bz_mesh):
-#            #print('k: ',k[0])
-#            for time1, time2 in MeshProduct(t_mesh, t_mesh):
-#                if time1.value == time2.value:
-#                    #eps_k_test[br1,br2][time1, time2, k] = eps_k(t1,t2,k)
-#                    #print(time1)
-#                    #eps_tild_k[br1,br2][time1,time2,k] = eps_k(t1,t2,k,time1.value) - delta[br1,br2][time1,time2]
-#                    eps_tild_k[br1,br2][time1,time2,k] = - delta[br1,br2][time1,time2]
-#                else:
-#                    eps_tild_k[br1,br2][time1,time2,k] = - delta[br1,br2][time1,time2]
 
-
-g_impeps = KeldyshGF(mesh=ttk_mesh, arg_index_shapes=((2,), (2,)))
-epsg_imp = KeldyshGF(mesh=ttk_mesh, arg_index_shapes=((2,), (2,)))
-epsg_impeps = KeldyshGF(mesh=ttk_mesh, arg_index_shapes=((2,), (2,)))
+gimp_eps = KeldyshGF(mesh=ttk_mesh, arg_index_shapes=((2,), (2,)))
+eps_gimp = KeldyshGF(mesh=ttk_mesh, arg_index_shapes=((2,), (2,)))
+eps_gimp_eps = KeldyshGF(mesh=ttk_mesh, arg_index_shapes=((2,), (2,)))
 for br1 in branches:
     for br2 in branches:
-        for k in (bz_mesh):
+        for k in bz_mesh:
             for time1, time2 in MeshProduct(t_mesh, t_mesh):
                 #print('time1: ', time1)
                 #print('time2: ', time2)
-                g_impeps[br1,br2][time1,time2,k] = gf_imp[br1,br2][time1,time2] * eps_k(t1,t2,k,time2.value)
-                epsg_imp[br1,br2][time1,time2,k] = eps_k(t1,t2,k,time1.value) * gf_imp[br1,br2][time1,time2]
-                #print(g_impeps[br1,br2][time1,time2,k][:,:])
-                epsg_impeps[br1,br2][time1,time2,k] = eps_k(t1,t2,k,time1.value) * g_impeps[br1,br2][time1,time2,k]
-#gf_imp[br1,br2][time1,time2] * eps_k(t1,t2,k,time2.value)
-                # no spin index because both diagonal in spin
+                eps_gimp[br1,br2][time1,time2,k] = eps_k(t1,t2,k,time1.value) \
+                                                   * gimp[br1,br2][time1,time2] # subtract loc part
+                eps_gimp_eps[br1,br2][time1,time2,k] = eps_gimp[br1,br2][time1,time2,k] \
+                                                       * eps_k(t1,t2,k,time2.value) # subtract loc part (eps_loc) from eps_k
 
-print(g_impeps[FW,FW].data[0,0,0,:,:])
-print(g_impeps[FW,FW].data[0,1,0,:,:])
-print(g_impeps[FW,FW].data[1,0,0,:,:])
-print(g_impeps[FW,FW].data[1,1,0,:,:])
+eps_gimp_delta = eps_gimp @ delta
+delta_gimp_eps = delta @ gimp_eps
+delta_gimp = delta @ gimp
+delta_gimp_delta = delta_gimp @ delta
 
-C = -0.5 * delta @ g_impeps
-Cb = -0.5 * g_impeps @ delta
-C1 = delta @ gf_imp
-D = C - Cb
-E = D + epsg_impeps
 Q = KeldyshGF(mesh=ttk_mesh, arg_index_shapes=((2,), (2,)))
-print('D is Hermitian:',is_hermitian(D))
-print('E is Hermitian:',is_hermitian(E))
-print('C1 is Hermitian:',is_hermitian(C1))
-print('gf_imp is Hermitian:',is_hermitian(gf_imp))
-print('g_impeps is Hermitian:',is_hermitian(g_impeps))
-print('epsg_impeps is Hermitian:',is_hermitian(epsg_impeps))
-print('C is Hermitian:',is_hermitian(C))
-print('delta is Hermitian:',is_hermitian(delta))
-
-
-#print('eps_tild_k is Hermitian:',is_hermitian(eps_tild_k))
-#print('delta is Hermitian:',is_hermitian(delta))
-
-#print('delta[FW,FW]:',g_impeps[FW,FW].data[0,0,:,:,:])
-#print('delta[FW,BW]:',g_impeps[FW,BW].data[0,0,:,:,:])
-#print('delta[BW,FW]:',g_impeps[BW,FW].data[0,0,:,:,:])
-#print('delta[BW,BW]:',g_impeps[BW,BW].data[0,0,:,:,:])
-
-#print('delta[FW,FW]:',g_impeps[FW,FW].data[0,1,:,:,:])
-#print('delta[FW,BW]:',g_impeps[FW,BW].data[0,1,:,:,:])
-#print('delta[BW,FW]:',g_impeps[BW,FW].data[0,1,:,:,:])
-#print('delta[BW,BW]:',g_impeps[BW,BW].data[0,1,:,:,:])
-
-#print('delta[FW,FW]:',g_impeps[FW,FW].data[1,0,:,:,:])
-#print('delta[FW,BW]:',g_impeps[FW,BW].data[1,0,:,:,:])
-#print('delta[BW,FW]:',g_impeps[BW,FW].data[1,0,:,:,:])
-
-#print('delta[BW,BW]:',g_impeps[BW,BW].data[1,0,:,:,:])
-
-#print('delta[FW,FW]:',g_impeps[FW,FW].data[1,1,:,:,:])
-#print('delta[FW,BW]:',g_impeps[FW,BW].data[1,1,:,:,:])
-#print('delta[BW,FW]:',g_impeps[BW,FW].data[1,1,:,:,:])
-#print('delta[BW,BW]:',g_impeps[BW,BW].data[1,1,:,:,:])
-
-
 for br1 in branches:
     for br2 in branches:
-        for k in (bz_mesh):
+        for k in bz_mesh:
+            #print('k: ',k[0])
             for time1, time2 in MeshProduct(t_mesh, t_mesh):
-                Q[br1,br2][time1,time2,k] = -delta[br1,br2][time1,time2] + epsg_impeps[br1,br2][time1,time2,k] - C[br1,br2][time1,time2,k]
+                Q[br1,br2][time1,time2,k] = eps_gimp_eps[br1,br2][time1,time2,k] \
+                                            + delta_gimp_delta[br1,br2][time1,time2] \
+                                            - eps_gimp_delta[br1,br2][time1,time2,k] \
+                                            - delta_gimp_eps[br1,br2][time1,time2,k]
+
+Q = 0.5 * (Q + herm_conj(Q))
+
+F = KeldyshGF(mesh=ttk_mesh, arg_index_shapes=((2,), (2,)))
+for br1 in branches:
+    for br2 in branches:
+        for k in bz_mesh:
+            for time1, time2 in MeshProduct(t_mesh, t_mesh):
+                F[br1,br2][time1,time2,k] = eps_gimp[br1,br2][time1,time2,k] \
+                                            - delta_gimp[br1,br2][time1,time2]
+
+
+Gd0 = solve_vie2(F, Q)
+
+exit()
+
+
+
+
+diffQQ_h = Q-herm_conj(Q)
+print('diff QQ_h: ', np.abs(diffQQ_h[FW,FW].data[0,0,0,0,0]))
+
+#t0 = list(t_mesh)[0]
+#z = ContourPoint(Branch.FORWARD, t0)
+#dt = t_max/n_t
+## Open the file for writing
+#with open('diffGG_h', 'a') as file:
+#    # Write the two numbers to the file separated by a tab
+#    file.write('{}\t{}\n'.format(dt,np.abs(I[FW,FW].data[0,0,0,0,0])))
+
 
 print('Q is Hermitian:',is_hermitian(Q))
+print('gimp is Hermitian:',is_hermitian(gimp))
+print('gimp_eps is Hermitian:',is_hermitian(gimp_eps))
+print('eps_gimp_eps is Hermitian:',is_hermitian(eps_gimp_eps))
+print('delta is Hermitian:',is_hermitian(delta))
 
-exit()
-#eps_k = from_lesser_greater(eps_k_l, eps_k_l) #!
-
-print(eps_k_test[FW,FW].data.shape)
-
-print('esp_k_spin:',eps_k_test[FW,BW].data[0,0,0,:,:])
-print('esp_k_spin:',eps_k_test[FW,BW].data[1,1,0,:,:])
-print('esp_k_spin:',eps_k_test[FW,BW].data[0,0,1,:,:])
-print('esp_k_spin:',eps_k_test[FW,BW].data[1,1,1,:,:])
-
-print('is Hermitian:',is_hermitian(eps_k_test))
-exit()
-print(eps_k==eps_k_test)
-#print('eps_k: ', eps_k[FW,FW].data.shape)
-print('delta: ', delta[FW,FW].data.shape)
-#print(eps_k.non_time_mesh.components)
-#print(dir(eps_k.non_time_mesh))
-
-for br1 in branches:
-    for br2 in branches:
-        eps_tild_k[br1,br2].data[...] = eps_k[br1,br2].data - delta[br1,br2].data[:,:,None,:,:]
-
-for br1 in branches:
-    for br2 in branches:
-        for k in (bz_mesh):
-            gf_imp_on_k_mesh[br1,br2].data[:,:,k.linear_index,:,:] = gf_imp[br1,br2].data[:,:,:,:]
-
-
-#eps_tildgf_imp_conv = eps_tild_k @ gf_imp
-F = eps_tild_k @ gf_imp
-
-#for sp1 in (0,1):
-#    for sp2 in (0,1):
-#        for sp3 in (0,1):
-#            print(sp1)
-#            for br1 in branches:
-#                for br2 in branches:
-#                    eps_tild_gf_imp_vareps[br1,br2].data[:,:,:,sp1,sp2] \
-#                     = eps_tildgf_imp_conv[br1,br2].data[:,:,:,sp1,sp3] \
-#                                   * eps_k[br1,br2].data[:,:,:,sp3,sp2]
-
-
-for sp in (0,1):
-    print(sp)
-    for br1 in branches:
-        for br2 in branches:
-            eps_tild_gf_imp_vareps[br1,br2].data[...] \
-                        = F[br1,br2].data[:,:,:,:,None,sp] \
-                          * eps_k[br1,br2].data[:,:,:,sp,None,:]
-
-Q = KeldyshGF(mesh=ttk_mesh, arg_index_shapes=((2,), (2,)))
-
-for br1 in branches:
-    for br2 in branches:
-        Q[br1,br2].data[...] = -delta[br1,br2].data[:,:,None,:,:] + eps_tild_gf_imp_vareps[br1,br2].data
-
-
-#G = solve_vie2(F, Q)
-#G = solve_vie2(F, F)
-G = solve_vie2(F, eps_k_test)
-#G = solve_vie2(F,eps_tild_gf_imp_vareps)
 exit()
 
 #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
-
-#for k in (bz_mesh):
-#    print(k.linear_index)
-#print(dir(bz_mesh))
-
-print(eps_tild_k.arg_index_shapes)
-print(gf_imp_on_k_mesh.arg_index_shapes)
-
-eps_tild_k @ gf_imp_on_k_mesh
-
-
-
-
-
-
-####
-exit()
 
 # Points on the real time axis 
 #t_points = list(t_mesh)
@@ -565,35 +471,3 @@ for br1 in branches:
             Lambda[br1,br2,br3].data[:,:,:,1,1,1] = tri_vertex_sp_dd[br1,br2,br3].data
 
 
-eps_k_l = Gf(mesh=ttk_mesh, target_shape=(2, 2)) #TODO: change to KeldyshGF 
-#g_k_= KeldyshGF(mesh=ttk_mesh, arg_index_shapes=((2,), (2,)))
-eps_tild_gf_imp_vareps = KeldyshGF(mesh=ttk_mesh, arg_index_shapes=((2,), (2,)))
-
-print(eps_k_l.data[0,1,:,1,1])
-for k in (bz_mesh):
-    #print(k)
-    for time1, time2 in MeshProduct(t_mesh, t_mesh):
-        if time1.value == time2.value:
-            eps_k_l[time1, time2, k] = eps_k(time1,time2,k)
-
-#print(Q_l.data.shape)
-#print(Q_l.data[0,0,:,0,0])
-#print(Q_l.data[0,0,:,1,0])
-#print(Q_l.data[0,0,:,0,1])
-#print(Q_l.data[0,0,:,1,1])
-#exit()
-#print(Q_l.data[0,1,:,0,0])
-#print(Q_l.data[1,1,:,0,0])
-#print(Q_l)
-eps_k = from_lesser_greater(eps_k_l, eps_k_l)
-
-print('eps_k: ', eps_k[FW,FW].data.shape)
-print('delta: ', delta[FW,FW].data.shape)
-
-for br1 in branches:
-    for br2 in branches:
-        eps_tild_k[br1,br2].data[...] = eps_k[br1,br2].data - delta[br1,br2].data[:,:,None,:,:]
-
-eps_tildgf_imp_conv = eps_tild_k @ gf_imp
-
-exit()

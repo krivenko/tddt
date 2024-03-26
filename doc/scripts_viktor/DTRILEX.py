@@ -40,6 +40,8 @@ from tddt.vie2 import solve_vie2
 
 # Model parameters
 U = 3.0
+Uch = U/2
+Usp = -U/2
 mu = 0.5 * U
 #eps = 0.2
 t1 = 1.0 # nearest neighbor hopping 
@@ -48,8 +50,8 @@ A = 0.1
 
 
 # time-mesh
-t_max = 20.0
-n_t = 21
+t_max = 10.0 #20.0
+n_t = 6 #21
 t_mesh = MeshReTime(0, t_max, n_t)
 tt_mesh = MeshProduct(t_mesh, t_mesh) # A 2D mesh as a direct product of t_mesh with itself
 m_interp = MeshReTime(0, t_max, n_t)
@@ -200,8 +202,8 @@ gimp = KeldyshGF(mesh=tt_mesh, arg_index_shapes=((2,), (2,)))
 
 for br1 in branches:
     for br2 in branches:
-        gimp[br1,br2][0,0].data[...] = gf['up'][br1,br2].data[...,0,0] # Is there a better way to deal with that (gf['up/dn'])?
-        gimp[br1,br2][1,1].data[...] = gf['dn'][br1,br2].data[...,0,0]
+        gimp[br1,br2][0,0].data[...] = -1j * gf['up'][br1,br2].data[...,0,0] # Is there a better way to deal with that (gf['up/dn'])?
+        gimp[br1,br2][1,1].data[...] = -1j * gf['dn'][br1,br2].data[...,0,0] #TODO: multiply by -i (see eq. 32) ?????????
 
 
 # GF of a noncorrelated site
@@ -274,10 +276,42 @@ for br1 in branches:
                 F[br1,br2][time1,time2,k] = eps_gimp[br1,br2][time1,time2,k] \
                                             - delta_gimp[br1,br2][time1,time2]
 
+F_test = 0.5 * (F + herm_conj(F))
 
-Gd0 = solve_vie2(F, Q)
+Gd0_test = solve_vie2(F_test, Q)
 
-exit()
+#Gd0 = solve_vie2(F, Q)
+
+#exit()
+
+nch = (n('up',0) + n('dn',0))
+nsp = (n('up',0) - n('dn',0))
+
+# compute_keldysh_conn_correlator_2t(A, B, init_state, h, t_mesh, params)
+# <T (A(t) - <A(t)>) (B(t') - <B(t')>)>
+# Impurity susceptibility
+
+susc_imp_ch = -1j * compute_keldysh_conn_correlator_2t(nch, 
+                                        nch,
+                                        init_state,
+                                        h,
+                                        t_mesh,
+                                        params)
+
+susc_imp_sp = -1j * compute_keldysh_conn_correlator_2t(nsp,
+                                        nsp,
+                                        init_state,
+                                        h,
+                                        t_mesh,
+                                        params)
+
+
+print('susc_imp_ch is Hermitian:',is_hermitian(susc_imp_ch))
+
+#pi_imp_ch = solve_vie2(susc_imp_ch*Uch, susc_imp_ch)
+pi_imp_sp = solve_vie2(susc_imp_sp*Uch, susc_imp_sp)
+
+#exit()
 
 
 
@@ -300,10 +334,10 @@ print('gimp_eps is Hermitian:',is_hermitian(gimp_eps))
 print('eps_gimp_eps is Hermitian:',is_hermitian(eps_gimp_eps))
 print('delta is Hermitian:',is_hermitian(delta))
 
-exit()
+#exit()
 
 #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
+"""
 # Points on the real time axis 
 #t_points = list(t_mesh)
 time1, time2 = t_points[0], t_points[1]
@@ -351,6 +385,8 @@ print(gf['dn'].arg_index_shapes)
 #C = conv(gf['dn'], gf['dn'],
 #         [(0, 1)])
 print(gf['dn'].components.data.shape)
+
+"""
 
 # Vertex
 arg_index_shapes = ((2,), #((2, 3),    # \sigma_1, l_1
@@ -433,13 +469,13 @@ tri_vertex_sp_dd = compute_keldysh_vertex3(('dn', 0), # c_indices
                                         t_mesh,
                                         params)
 
-tri_vertex_test = compute_keldysh_vertex3(('dn', 0), # c_indices
-                                        ('dn', 0), # c_dag_indices
-                                        c_dag('dn', 0)*c_dag('up', 0), # n_op
-                                        init_state,
-                                        h,
-                                        t_mesh,
-                                        params)
+#tri_vertex_test = compute_keldysh_vertex3(('dn', 0), # c_indices
+#                                        ('dn', 0), # c_dag_indices
+#                                        c_dag('dn', 0)*c_dag('up', 0), # n_op
+#                                        init_state,
+#                                        h,
+#                                        t_mesh,
+#                                        params)
 
 #tri_vertex_test2 = compute_keldysh_vertex3(('dn', 0), # c_indices
 #                                        ('dn', 0), # c_dag_indices
@@ -471,3 +507,21 @@ for br1 in branches:
             Lambda[br1,br2,br3].data[:,:,:,1,1,1] = tri_vertex_sp_dd[br1,br2,br3].data
 
 
+
+print(Lambda[FW,FW,FW].data[0,0,0,0,0,0])
+print(Lambda[FW,FW,FW].data[0,1,1,0,0,0])
+print(Lambda[FW,FW,FW].data[1,0,1,0,0,0])
+print(Lambda[FW,FW,FW].data[1,1,0,0,0,0])
+print(Lambda[FW,FW,FW].data[1,1,1,0,0,0])
+
+print(Lambda[FW,FW,FW].data[0,0,0,0,0,1])
+print(Lambda[FW,FW,FW].data[0,1,1,0,0,1])
+print(Lambda[FW,FW,FW].data[1,0,1,0,0,1])
+print(Lambda[FW,FW,FW].data[1,1,0,0,0,1])
+print(Lambda[FW,FW,FW].data[1,1,1,0,0,1])
+
+print(Lambda[FW,FW,BW].data[0,0,0,0,0,0])
+print(Lambda[FW,FW,BW].data[0,1,1,0,0,0])
+print(Lambda[FW,FW,BW].data[1,0,1,0,0,0])
+print(Lambda[FW,FW,BW].data[1,1,0,0,0,0])
+print(Lambda[FW,FW,BW].data[1,1,1,0,0,0])

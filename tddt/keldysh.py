@@ -4,14 +4,15 @@
 
 from enum import Enum
 from copy import deepcopy
-from itertools import product, takewhile, islice
-from typing import Tuple, Dict, Union, Sequence, Optional
+from itertools import product, takewhile, islice, chain
+from typing import Tuple, Dict, Union, Sequence, Optional, Callable
 import numpy as np
 
 from triqs.gf import Gf, MeshReTime, MeshPoint, MeshProduct
 
 from .util import subscripts
 from .integration import GregoryIntegrator
+from .retime import conv_ret_lg, conv_lg_adv
 
 
 class Branch(Enum):
@@ -132,6 +133,39 @@ class KeldyshGF:
              for _ in range(2 ** self.n_args)]
         ).reshape((2,) * self.n_args)
 
+    @classmethod
+    def from_arg_index_gen(cls,
+                           generator: Callable, *,
+                           mesh: Union[MeshReTime, MeshProduct],
+                           arg_index_shapes: Tuple[Tuple[int, ...], ...]
+                           ):
+        """
+        Construct a matrix/tensor-valued KeldyshGF object out of scalar-valued
+        components returned by a given generator function.
+
+        The generator function used to construct an N-point GF must accept N
+        arguments, each of which is a tuple of integer indices from the ranges
+        determined by the respective parts of `arg_index_shapes`. The generator
+        is expected to return a scalar-valued KeldyshGF object.
+        """
+        g = KeldyshGF(mesh=mesh, arg_index_shapes=arg_index_shapes)
+
+        for indices in product(*map(np.ndindex, arg_index_shapes)):
+            g_el = generator(*indices)
+            assert isinstance(g_el, KeldyshGF), \
+                "Generator must return an instance of KeldyshGF"
+            assert g.n_args == g_el.n_args, \
+                f"Expected a {g.n_args}-point GF from the generator " \
+                f"(got a {g_el.n_args}-point GF)"
+            assert g.mesh == g_el.mesh, \
+                "GF returned by the generator has a wrong mesh"
+
+            for g_comp, g_el_comp in zip(g.components.flat,
+                                         g_el.components.flat):
+                g_comp.data[..., *chain.from_iterable(indices)] = g_el_comp.data
+
+        return g
+
     def __getitem__(self, args):
         args_t = args if isinstance(args, tuple) else (args,)
 
@@ -234,10 +268,57 @@ class KeldyshGF:
 
     def __matmul__(self, other):
         r"""
-        Contour convolution over the last argument of 'self' and
+        Contour convolution over the second argument of 'self' and
         the first argument of 'other'.
         """
-        return conv(self, other, [(-1, 0)])
+
+        # General case
+        if not (self.n_args == 2 and other.n_args == 2):
+            return conv(self, other, [(-1, 0)])
+
+        # High-accuracy approach for a convolution of two 2-point GFs
+
+        self_l = lesser(self)
+        self_g = greater(self)
+        self_ret = retarded_ext(self)
+
+        other_l = lesser(other)
+        other_g = greater(other)
+        other_adv = advanced_ext(other)
+
+        conv_l = conv_ret_lg(self_ret, other_l) + conv_lg_adv(self_l, other_adv)
+        conv_g = conv_ret_lg(self_ret, other_g) + conv_lg_adv(self_g, other_adv)
+
+        return from_lesser_greater(
+            conv_l,
+            conv_g,
+            n_left_target_axes=len(self.arg_index_shapes[0])
+        )
+    
+
+
+class KeldyshGFDetailed(KeldyshGF):
+    def __init__( 
+            self, *,
+            mesh: Union[MeshReTime, MeshProduct],
+            target_shape: Optional[Tuple[int, ...]] = None,
+            arg_index_shapes: Optional[Tuple[Tuple[int, ...], ...]] = None,
+            bosons: Tuple[int],
+            fermions: Tuple[int]
+            ):
+        self.fermions = set(fermions)
+        self.bosons = set(bosons)
+        super().__init__(mesh, target_shape, arg_index_shapes)
+
+        assert self.fermions.union(self.bosons) == set(range(self.n_args)), \
+            "Fermion and Boson sets do not cover all arguments"
+        
+        assert self.fermions & self.bosons == set(), \
+            "A vertex can be either fermionic or nosonic, not both"
+        
+        
+
+
 
 
 def target_dot(g: KeldyshGF,

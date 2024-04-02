@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name='tddt',
-    version='0.3.0',
+    version='0.3.1',
     url='https://github.com/krivenko/tddt.git',
     author='Viktor Valmispild, Igor Krivenko',
     author_email='valmispild@gmail.com, igor.s.krivenko@gmail.com',

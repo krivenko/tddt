@@ -7,7 +7,7 @@ import numpy as np
 
 from triqs.gf import Gf, MeshReTime
 
-from .retime import conj, conv_l_adv
+from .retime import conj, conv_lg_adv
 from .keldysh import (KeldyshGF,
                       lesser,
                       retarded,
@@ -305,7 +305,7 @@ def solve_vie2(F: KeldyshGF, Q: KeldyshGF) -> KeldyshGF:
 
     F_l = lesser(F)
     G_adv_ext = conj(G_ret_ext)  # This applies only for a Hermitian G(t, t')
-    rhs_l = lesser(Q) - conv_l_adv(F_l, G_adv_ext)
+    rhs_l = lesser(Q) - conv_lg_adv(F_l, G_adv_ext)
     G_l = Gf(mesh=rhs_l.mesh, target_shape=rhs_l.target_shape)
 
     time_mesh_shape2 = (len(rhs_l.mesh.components[1]),)

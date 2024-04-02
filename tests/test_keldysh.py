@@ -360,9 +360,9 @@ class test_keldysh(unittest.TestCase):
 
         def generator(ind1, ind2, ind3):
             g_el = KeldyshGF(mesh=ttt_mesh)
-            for br in product(Branch, repeat=3):
+            for br1, br2, br3 in product(Branch, repeat=3):
                 val = (ind1[0] + ind1[1]) * (ind2[0] - ind2[1]) * (ind3[0] + 3)
-                g_el[*br].data[:] = val
+                g_el[br1, br2, br3].data[:] = val
             return g_el
 
         g = KeldyshGF.from_arg_index_gen(generator,
@@ -370,11 +370,13 @@ class test_keldysh(unittest.TestCase):
                                          arg_index_shapes=arg_index_shapes)
 
         index_ranges = product(*map(range, (2, 3, 3, 2, 4)))
-        for ind in index_ranges:
-            val = (ind[0] + ind[1]) * (ind[2] - ind[3]) * (ind[4] + 3)
-            for br in product(Branch, repeat=3):
-                assert_array_equal(g[*br].data[..., *ind],
-                                   val * np.ones((7, 8, 9)))
+        for i in index_ranges:
+            val = (i[0] + i[1]) * (i[2] - i[3]) * (i[4] + 3)
+            for br1, br2, br3 in product(Branch, repeat=3):
+                assert_array_equal(
+                    g[br1, br2, br3].data[:, :, :,
+                                          i[0], i[1], i[2], i[3], i[4]],
+                    val * np.ones((7, 8, 9)))
 
     def test_keldysh_gf_bz(self):
         tt_mesh = MeshProduct(MeshReTime(0, 6.0, 7), MeshReTime(0, 6.0, 8))

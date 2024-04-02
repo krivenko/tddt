@@ -162,7 +162,9 @@ class KeldyshGF:
 
             for g_comp, g_el_comp in zip(g.components.flat,
                                          g_el.components.flat):
-                g_comp.data[..., *chain.from_iterable(indices)] = g_el_comp.data
+                sl = (slice(None),) * len(mesh.components) + \
+                    tuple(chain.from_iterable(indices))
+                g_comp.data[sl] = g_el_comp.data
 
         return g
 

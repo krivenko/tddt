@@ -711,6 +711,8 @@ def conv(a: KeldyshGF,  # noqa: C901
 
     subs = f"{subs_a}," + ','.join(subs_w) + f",{subs_b}->{subs_res}"
 
+    #print(subs)
+
     res = KeldyshGF(mesh=MeshProduct(*mesh_comps_res),
                     arg_index_shapes=subshapes_res)
 

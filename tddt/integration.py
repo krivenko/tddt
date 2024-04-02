@@ -138,4 +138,5 @@ class GregoryIntegrator:
             w[-stencil_size:] += np.flip(self.B)
 
         w *= mesh.delta
+        print(w)
         return w

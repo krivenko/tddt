@@ -2,7 +2,7 @@
 FROM flatironinstitute/triqs:3.1.1 as base
 LABEL maintainer="Igor Krivenko <igor.s.krivenko@gmail.com>"
 LABEL description="Implementation of the time-dependent dual TRILEX theory"
-LABEL version="0.3.0"
+LABEL version="0.3.1"
 
 USER root
 RUN useradd -m -s /bin/bash -u 999 build && echo "build:build" | chpasswd
@@ -65,12 +65,11 @@ USER root
 RUN rm -rf /home/build/boost /home/build/realevol
 
 # Install TDDT
-USER root
+USER build
 COPY --chown=build . /src/tddt
 WORKDIR /src/tddt
-RUN pip3 install -r requirements.txt
-RUN pip3 install .
+RUN pip3 install --user -r requirements.txt
+RUN pip3 install --user .
 
 # Test TDDT
-USER build
 RUN python3 -m pytest -v --with-mpi

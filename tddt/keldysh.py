@@ -305,20 +305,23 @@ class KeldyshGFDetailed(KeldyshGF):
             mesh: Union[MeshReTime, MeshProduct],
             target_shape: Optional[Tuple[int, ...]] = None,
             arg_index_shapes: Optional[Tuple[Tuple[int, ...], ...]] = None,
-            bosons: Tuple[int],
-            fermions: Tuple[int]
+            bosons: Tuple[int] = (),
+            fermions: Tuple[int] = ()
             ):
         self.fermions = set(fermions)
         self.bosons = set(bosons)
-        super().__init__(mesh, target_shape, arg_index_shapes)
+        super().__init__(mesh=mesh, target_shape = target_shape, arg_index_shapes = arg_index_shapes)
 
         assert self.fermions.union(self.bosons) == set(range(self.n_args)), \
             "Fermion and Boson sets do not cover all arguments"
         
         assert self.fermions & self.bosons == set(), \
             "A vertex can be either fermionic or nosonic, not both"
+
+    def __matmul__(self, other):
+        pass
         
-        
+
 
 
 

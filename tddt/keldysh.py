@@ -316,7 +316,7 @@ class KeldyshGFDetailed(KeldyshGF):
             "Fermion and Boson sets do not cover all arguments"
         
         assert self.fermions & self.bosons == set(), \
-            "A vertex can be either fermionic or nosonic, not both"
+            "A vertex can be either fermionic or bosonic, not both"
 
     def __matmul__(self, other):
         pass

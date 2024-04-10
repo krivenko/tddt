@@ -298,6 +298,10 @@ class KeldyshGF:
         )
     
 
+class MixedKeldyshGF():
+    pass
+
+
 
 class KeldyshGFDetailed(KeldyshGF):
     def __init__( 
@@ -305,18 +309,28 @@ class KeldyshGFDetailed(KeldyshGF):
             mesh: Union[MeshReTime, MeshProduct],
             target_shape: Optional[Tuple[int, ...]] = None,
             arg_index_shapes: Optional[Tuple[Tuple[int, ...], ...]] = None,
-            bosons: Tuple[int] = (),
-            fermions: Tuple[int] = ()
+            #bosons: int = 0,
+            fermions: int = 0
             ):
-        self.fermions = set(fermions)
-        self.bosons = set(bosons)
+        self.fermions = fermions
+         
+        # The given number of point are fermions, the rest are bosons, fermions come before bosons
         super().__init__(mesh=mesh, target_shape = target_shape, arg_index_shapes = arg_index_shapes)
+        self.bosons = self.n_args - self.fermions 
+    #
+    # Functions specific to the 2-fermion point GFs
+    #
 
-        assert self.fermions.union(self.bosons) == set(range(self.n_args)), \
-            "Fermion and Boson sets do not cover all arguments"
+    def greater(self):
+        r"""Returns the greater component of a 2- fermion point Keldysh Green's function"""
+        assert self.fermions == 2, "Greater works only for 2-fermion point functions"  
+        return self.components[Branch.BACKWARD.value, Branch.FORWARD.value, ...]
+    
+    def lesser(self):
+        r"""Returns the lesser component of a 2- fermion point Keldysh Green's function"""
+        assert self.fermions == 2, "Lesser works only for 2-fermion point functions"  
+        return self.components[Branch.FORWARD.value, Branch.BACKWARD.value, ...]
         
-        assert self.fermions & self.bosons == set(), \
-            "A vertex can be either fermionic or bosonic, not both"
 
     def __matmul__(self, other):
         pass

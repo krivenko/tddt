@@ -542,7 +542,7 @@ def generator_three_point_vertex(ind1, ind2, ind3):
     return g_el
 
 
-#three_point_corr = KeldyshGF.from_arg_index_gen(generator_three_point_vertex, mesh=MeshProduct(t_mesh, t_mesh, t_mesh), arg_index_shapes=arg_index_shapes)
+three_point_corr = KeldyshGF.from_arg_index_gen(generator_three_point_vertex, mesh=MeshProduct(t_mesh, t_mesh, t_mesh), arg_index_shapes=arg_index_shapes)
 
 arg_index_shapes = ((2,),
                     (2,))
@@ -553,8 +553,8 @@ for br1 in branches:
             U_pi_imp[br1,br2].data[:,:,0,0] = Uch*pi_imp[br1,br2].data[:,:,0,0]
             U_pi_imp[br1,br2].data[:,:,1,1] = Usp*pi_imp[br1,br2].data[:,:,1,1]
 
-#Lambda = conv(three_point_corr, U_pi_imp,
-#              [(2, 0)])
+Lambda = conv(three_point_corr, U_pi_imp,
+              [(2, 0)])
 
 
 # Wprime
@@ -574,11 +574,45 @@ for br1 in branches:
 Wprime = solve_vie2(Uq_piimp_Uq, Uq_piimp)
 
 
-
-
-
 from convolution import convolution_fft
 
+
+def selfenergy_2nd_order_new(Lambda: KeldyshGF, g: KeldyshGF, w: KeldyshGF):
+    r"""
+    2nd order contribution to the self-energy function.
+
+    Lambda: 3-point vertex.
+    g: Fermionic line.
+    w: Bosonic line.
+    """
+    assert Lambda.n_args == 3, "Lambda must be a 3-point vertex"
+    assert g.n_args == 2, "g must be a 2-point GF"
+    assert w.n_args == 2, "w must be a 2-point GF"
+
+    # f1(z_1, z'''', z'') = \int_C dz' \Lambda(z_1, z', z'') g(z', z'''')
+    f1 = conv(Lambda, g, [(1, 0)], free_args=([0, 2], [1]))
+    # f2(z'''', z_2, z'') = \int_C dz''' \Lambda(z'''', z_2, z''') w(z'', z''')
+    f2 = conv(Lambda, w, [(2, 1)], free_args=([0, 1], [2]))
+    # \Sigma(z_1, z_2) = i \int_C dz'' dz'''' f1(z_1, z'''', z'')
+    #                                         f2(z'''', z_2, z'')
+    
+    f1f2 = KeldyshGF(mesh=ttk_mesh, arg_index_shapes=((2,2),(2,2)))
+
+    for br1 in branches:
+        for br2 in branches:
+            for sigm in range(2): # spin up and dn
+                for channel in range(2): # ch and sp channels
+                    for time1, time2 in MeshProduct(t_mesh, t_mesh):
+                        f1f2[br1,br2][sigm,sigm,channel,channel].data[time1.index,time2.index,:] = \
+                                convolution_fft(f1[br1,br2][sigm,sigm].data[time1.index,time2.index,:],
+                                f2[br1,br2][channel,channel].data[time1.index,time2.index,:])
+    return 1j * f1f2
+
+
+
+selfenergy_2nd_order_new(Lambda,Gd0_test,Wprime)
+
+exit()
 
 #def selfenergy_2nd_order_new(Lambda: KeldyshGF, g: KeldyshGF, w: KeldyshGF):
 def selfenergy_2nd_order_new(g: KeldyshGF, w: KeldyshGF):

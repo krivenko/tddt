@@ -330,6 +330,12 @@ class KeldyshGFDetailed(KeldyshGF):
         r"""Returns the lesser component of a 2- fermion point Keldysh Green's function"""
         assert self.fermions == 2, "Lesser works only for 2-fermion point functions"  
         return self.components[Branch.FORWARD.value, Branch.BACKWARD.value, ...]
+    
+    def retarded_ext(self):
+        return self.greater()-self.lesser()
+    
+    def advanced_ext(self):
+        return -self.retarded_ext()
         
 
     def __matmul__(self, other):

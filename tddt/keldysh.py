@@ -325,18 +325,26 @@ class KeldyshGFDetailed(KeldyshGF):
     def greater(self):
         r"""Returns the greater component of a 2- fermion point Keldysh Green's function"""
         assert self.fermions == 2, "Greater works only for 2-fermion point functions"  
-        return self.components[Branch.BACKWARD.value, Branch.FORWARD.value, ...]
+        self_gtr = self.components[Branch.BACKWARD.value, Branch.FORWARD.value, ...].copy()
+        for i in np.ndindex((2,)*self.bosons):
+            self_gtr[i]=self_gtr[i].data
+        return self_gtr
     
     def lesser(self):
         r"""Returns the lesser component of a 2- fermion point Keldysh Green's function"""
         assert self.fermions == 2, "Lesser works only for 2-fermion point functions"  
-        return self.components[Branch.FORWARD.value, Branch.BACKWARD.value, ...]
+        self_lss = self.components[Branch.FORWARD.value, Branch.BACKWARD.value, ...].copy()
+        for i in np.ndindex((2,)*self.bosons):
+            self_lss[i]=self_lss[i].data
+        return self_lss
     
     def retarded_ext(self):
         return self.greater()-self.lesser()
     
     def advanced_ext(self):
-        return -self.retarded_ext()
+        return self.lesser()-self.greater()
+    
+    
         
 
     def __matmul__(self, other):

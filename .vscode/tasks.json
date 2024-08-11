@@ -1,0 +1,11 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "setup_environment",
+            "type": "shell",
+            "command": "cd /Users/viktor.harkov/TRIQS/ && . ./start.sh && cd /Users/viktor.harkov/",
+            "problemMatcher": []
+        }
+    ]
+}

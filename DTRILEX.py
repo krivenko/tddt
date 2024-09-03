@@ -39,6 +39,7 @@ from triqs.gf import MeshBrillouinZone
 from tddt.vie2 import solve_vie2
 import matplotlib.pyplot as plt
 from h5 import HDFArchive
+np.set_printoptions(threshold=np.inf, linewidth=np.inf)
 
 ########################## Reference system #######################
 
@@ -51,7 +52,7 @@ mu = 0.5 * U
 t1 = 1.0 # nearest neighbor hopping 
 t2 = 0.0 # next nearest neighbor hopping
 A = 0.1
-
+Omega = 10
 
 # time-mesh
 t_max = 20.0 # 10.0 #20.0
@@ -83,9 +84,10 @@ branches = (FW, BW)
 
 
 # time dependent hopping for Hamiltonian
-dt_pos = ti(m_interp, np.array([t1*np.exp(1.j * A * np.cos(1 * x)) for x in m_interp]))
-dt_neg = ti(m_interp, np.array([t1*np.exp(-1.j * A * np.cos(1 * x)) for x in m_interp]))
-
+dt_pos = ti(m_interp, np.array([t1*np.exp(1.j * A * np.cos(Omega * x)) for x in m_interp]))
+dt_neg = ti(m_interp, np.array([t1*np.exp(-1.j * A * np.cos(Omega * x)) for x in m_interp]))
+print(dt_pos.data)
+print(dt_pos.data.shape)
 
 # Lattice dispersion
 
@@ -93,29 +95,37 @@ eps_tk = Gf(mesh=tk_mesh, target_shape=(2, 2))
 
 for t, k in tk_mesh:
     #eps_tk[t, k] = -2 * np.array([[[1, 0], [0, -1]]]) * np.cos(t.value) * (np.cos(k[0]) + np.cos(k[1]))
-    eps_tk[t, k] = -2.0*t1*(np.cos(k[0]-A*np.cos(t.value))+np.cos(k[1]-A*np.cos(t.value))) \
-                   -4.0*t2*np.cos(k[0]-A*np.cos(t.value))*np.cos(k[1]-A*np.cos(t.value))
+    eps_tk[t, k] = -2.0*t1*(np.cos(k[0]-A*np.cos(Omega * t.value))+np.cos(k[1]-A*np.cos(Omega * t.value))) \
+                   -4.0*t2*np.cos(2*(k[0]-A*np.cos(Omega * t.value)))*np.cos(2*(k[1]-A*np.cos(Omega * t.value)))
+    
+eps_loc = np.mean(eps_tk.data, axis = 1)
 
+for t, k in tk_mesh:
+    eps_tk[t, k] = eps_tk[t, k] - eps_loc[t.index, :]
 
 #print(eps_tk.data[0,0,:,:])
 
 eps_s2p_K = Singular2PKeldyshGF.from_retime(eps_tk)
 
-for t, k in tk_mesh:
-    print('eps_s2p_K: ', eps_s2p_K[FW][t,k])
-print(eps_s2p_K.arg_index_shapes)
+
+#for t, k in tk_mesh:
+#    print('eps_s2p_K: ', eps_s2p_K[FW][t,k])
+#print(eps_s2p_K.arg_index_shapes)
 
 #print('eps_s2p_K:')
 #print(eps_s2p_K[FW][t,:][0,0].data)
 #print(eps_s2p_K[FW][t,:].data)
 
 # Dispersion reference system 
+#TODO: compare to dt_pos/ dt_neg
 def V(axis, sign, t):
     """ axis = x,y
         sign = -1,+1
     """
-    V = t1*np.exp(sign*1.j*A*np.cos(1 * t))
+    V = t1 * np.exp(sign * 1.j * A * np.cos(Omega * t))
     return V
+for i in t_mesh:
+    print(V('x', +1, i))
 
 # Non-local interaction
 def Vq(k, channel):
@@ -161,12 +171,19 @@ print('eps_loc: ', eps_loc)
 
 # Bare lattice interaction 
 Uq = Gf(mesh=tk_mesh, target_shape=(2, 2))
+Uq_tilde = Gf(mesh=tk_mesh, target_shape=(2, 2))
+
 for t, k in tk_mesh:
     #eps_tk[t, k] = -2 * np.array([[[1, 0], [0, -1]]]) * np.cos(t.value) * (np.cos(k[0]) + np.cos(k[1]))
     Uq[t, k][0,0] = Uch + Vq(k, 0) # charge
-    Uq[t, k][1,1] = Usp + Vq(k, 0) # spin
+    Uq[t, k][1,1] = Usp + Vq(k, 1) # spin
+    Uq_tilde[t, k][0,0] = Uq[t, k][0,0] - 0.5*Uch
+    Uq_tilde[t, k][1,1] = Uq[t, k][1,1] - 0.5*Usp
 
 Uq_s2p_K = Singular2PKeldyshGF.from_retime(Uq)
+Uq_tilde_s2p_K = Singular2PKeldyshGF.from_retime(Uq_tilde)
+
+print(Uq_tilde_s2p_K[FW].data)
 
 for t, k in tk_mesh:
     print('Uq_sp2_K: ', Uq_s2p_K[FW][t,k][0,0])
@@ -180,13 +197,14 @@ for k in bz_mesh:
 ################################# OLD Uq END ################################
 
 
-# Check FFT on dispersion
-eps_R = np.empty_like(eps_matrix, dtype = 'complex')
+# FFT on dispersion
+#TODO: check ifftn vs fftn -> which one to use?
+#eps_R = np.empty_like(eps_matrix, dtype = 'complex')
 
-for time in t_mesh:
-    eps_K = eps_matrix[:,:,:,time.index]
-    eps_R[:,:,:,time.index] = np.fft.ifftn(eps_K, axes=(0,1,2))
-print(eps_R[:,:,0,0])
+#for time in t_mesh:
+#    eps_K = eps_matrix[:,:,:,time.index]
+#    eps_R[:,:,:,time.index] = np.fft.ifftn(eps_K, axes=(0,1,2))
+#print(eps_R[:,:,0,0])
 
 eps_R = np.empty_like(eps_matrix, dtype = 'complex')
 eps_R_test = np.empty_like(eps_matrix, dtype = 'complex')
@@ -213,7 +231,7 @@ for k in bz_mesh:
 
 
 
-############################ FFT ###################################
+############################ FFT OLD ###################################
 
 #from convolution import convolution_fft
 
@@ -263,7 +281,7 @@ def from_K_to_R(g: KeldyshGF):
 #Gd0R = from_K_to_R(Gd0_test)
 #print(Gd0_test[FW,FW].data.shape)
 
-############################ FFT END ###################################
+############################ FFT OLD END ###################################
 
 
 # fermionic operators for the reference problem 
@@ -317,12 +335,13 @@ params['lanczos_min_matrix_size'] = 40       # Use LAPACK for subspaces of dim 3
 
 
 # Impurity GF
-gf_struct = [('up', 1), ('dn', 1)]
-gf = compute_keldysh_gf(gf_struct,
-                        init_state,
-                        h,
-                        t_mesh,
-                        params)
+# TODO: remove if not needed
+#gf_struct = [('up', 1), ('dn', 1)]
+#gf = compute_keldysh_gf(gf_struct,
+#                        init_state,
+#                       h,
+#                        t_mesh,
+#                        params)
 
 # Reference System GF
 gf_struct_ref = [('up', 5), ('dn', 5)]
@@ -415,25 +434,38 @@ delta_gimp_delta = delta_gimp @ delta
 #delta_gimp_delta = conv(delta_gimp,delta,[(1, 0)])# [(0, 1), (1, 0)])
 """
 Q = KeldyshGF(mesh=ttk_mesh, arg_index_shapes=((2,), (2,)))
-for br1 in branches:
+for br1 in branches: 
     for br2 in branches:
         for k in bz_mesh:
             #print('k: ',k[0])
             for time1, time2 in MeshProduct(t_mesh, t_mesh):
-                #Q[br1,br2][time1,time2,k] = eps_gimp_eps[br1,br2][time1,time2,k] \
-                #                            - eps_gimp_delta[br1,br2][time1,time2,k] \
-                #                            - delta_gimp_eps[br1,br2][time1,time2,k] \
-                #                            + delta_gimp_delta[br1,br2][time1,time2] 
+                Q[br1,br2][time1,time2,k] = eps_gimp_eps[br1,br2][time1,time2,k] \
+                                            - eps_gimp_delta[br1,br2][time1,time2,k] \
+                                            - delta_gimp_eps[br1,br2][time1,time2,k] \
+                                            + delta_gimp_delta[br1,br2][time1,time2] 
                 #Q[br1,br2][time1,time2,k] = delta_gimp_delta[br1,br2][time1,time2] \
                 #                            - eps_gimp_delta[br1,br2][time1,time2,k] \
                 #                            - delta_gimp_eps[br1,br2][time1,time2,k]
-                Q[br1,br2][time1,time2,k] = eps_gimp_eps[br1,br2][time1,time2,k] \
-                                            - eps_gimp_delta[br1,br2][time1,time2,k] \
-                                            - delta_gimp_eps[br1,br2][time1,time2,k]
+                #Q[br1,br2][time1,time2,k] = eps_gimp_eps[br1,br2][time1,time2,k] \
+                #                            - eps_gimp_delta[br1,br2][time1,time2,k] \
+                #                            - delta_gimp_eps[br1,br2][time1,time2,k]
 """
-Q = eps_gimp_eps - eps_gimp_delta - delta_gimp_eps
+Q = KeldyshGF(mesh=ttk_mesh, arg_index_shapes=((2,), (2,)))
+for br1 in branches: 
+    for br2 in branches:
+        for k in bz_mesh:
+            #print('k: ',k[0])
+            for time1, time2 in MeshProduct(t_mesh, t_mesh):
+                Q[br1,br2][time1,time2,k] = - delta[br1,br2][time1,time2] \
+                                            + eps_gimp_eps[br1,br2][time1,time2,k] \
+                                            - delta_gimp_eps[br1,br2][time1,time2,k]
 
-Q_test = 0.5 * (Q + herm_conj(Q)) # for now to circumvent the hermicity check !!!!
+# eps_tilde = eps_s2p_K - delta # TODO create new object (maybe)
+
+#Q = eps_gimp_eps - eps_gimp_delta - delta_gimp_eps # + delta_gimp_delta  <- include
+
+Q = 0.5 * (Q + herm_conj(Q)) # for now to circumvent the hermicity check !!!!
+
 Q_herm = herm_conj(Q)
 
 print(Q[FW,FW].data[0,0,:,:])
@@ -483,29 +515,21 @@ for br1 in branches:
     for br2 in branches:
         for k in bz_mesh:
             for time1, time2 in MeshProduct(t_mesh, t_mesh):
-                F[br1,br2][time1,time2,k] = eps_gimp[br1,br2][time1,time2,k] \
-                                            - delta_gimp[br1,br2][time1,time2]
-                #print(F[br1,br2][time1,time2,k][ch,ch].shape)
-                ##print(F[time1,time2,k][ch,ch].data.shape)
-                #print(F[br1,br2][time1,time2,k].shape)
-                #print(F[br1,br2][ch,ch].data.shape)
-                #print(type(F[br1,br2][ch,ch].data))
+                F[br1,br2][time1,time2,k] = - eps_gimp[br1,br2][time1,time2,k] \
+                                            + delta_gimp[br1,br2][time1,time2]
 
-#exit()
+
 print('F is Hermitian:', F.is_hermitian())
-#F_test = F
-F_test = 0.5 * (F + herm_conj(F)) # for now to circumvent the hermicity check !!!!
-np.set_printoptions(threshold=np.inf, linewidth=np.inf)
-#Gd0_reg_test = solve_vie2(F, Q)
-#Gd0_reg_test = solve_vie2(-F_test, Q_test)
-Gd0_reg_test = solve_vie2(F_test, Q)
+F = 0.5 * (F + herm_conj(F)) # for now to circumvent the check !!!!
+
+Gd0_reg = solve_vie2(F, Q)
 
 ########################## CHECK GD0 ##############################
-Gd0Gd0_h = herm_conj(Gd0_reg_test @ Gd0_reg_test)
-Gd0_hGd0_h = herm_conj(Gd0_reg_test) @ herm_conj(Gd0_reg_test)
+Gd0Gd0_h = herm_conj(Gd0_reg @ Gd0_reg)
+Gd0_hGd0_h = herm_conj(Gd0_reg) @ herm_conj(Gd0_reg)
 
 #Gd0_reg = solve_vie2(F, Q)
-print(Gd0_reg_test[FW,BW].data.shape) #(21, 21, 9, 2, 2)
+print(Gd0_reg[FW,BW].data.shape) #(21, 21, 9, 2, 2)
 #exit()
 
 safe = False
@@ -574,7 +598,7 @@ print('Q[FW,FW].data[1,0,0,0,0]', Q[FW,FW].data[1,0,0,0,0])
 print('Q_h[FW,FW].data[1,0,0,0,0]', herm_conj(Q)[FW,FW].data[1,0,0,0,0])
 print('Q[FW,FW].data[0,1,0,0,0]', Q[FW,FW].data[0,1,0,0,0])
 print('Q_h[FW,FW].data[0,1,0,0,0]', herm_conj(Q)[FW,FW].data[0,1,0,0,0])
-#diffGdGd_h = Gd0_reg_test-herm_conj(Gd0_reg_test)
+#diffGdGd_h = Gd0_reg-herm_conj(Gd0_reg)
 #print('diff GdGd_h: ', np.abs(diffGdGd_h[FW,FW].data[0,0,0,0,0]))
 #print(t_max/n_t, np.abs(diffGdGd_h[FW,FW].data[0,0,0,0,0]), np.abs(diffGdGd_h[FW,FW].data[0,1,0,0,0]), np.abs(diffGdGd_h[FW,FW].data[1,0,0,0,0]), np.abs(diffGdGd_h[FW,FW].data[1,1,0,0,0]))
 #exit()
@@ -651,10 +675,10 @@ def generator_susc_imp(ind1, ind2):
             return None
 
     operator = get_operator(ind1, ind2)
-    print(operator)
+    #print(operator)
     if operator:
         #print('operator after if: ', operator)
-        g_el = compute_keldysh_conn_correlator_2t(operator,
+        g_el = -1j * compute_keldysh_conn_correlator_2t(operator,
                                         operator,
                                         init_state,
                                         h,
@@ -667,7 +691,6 @@ def generator_susc_imp(ind1, ind2):
 
 susc_imp = KeldyshGF.from_arg_index_gen(generator_susc_imp, mesh=MeshProduct(t_mesh, t_mesh), arg_index_shapes=arg_index_shapes)
 
-
 susc_imp_U = KeldyshGF(mesh=MeshProduct(t_mesh, t_mesh), arg_index_shapes=arg_index_shapes)
 for br1 in branches:
     for br2 in branches:
@@ -677,6 +700,7 @@ for br1 in branches:
 # Impurity polarization
 susc_imp = 0.5 * (susc_imp + herm_conj(susc_imp)) # for now to circumvent the hermicity check !!!!
 susc_imp_U = 0.5 * (susc_imp_U + herm_conj(susc_imp_U))
+
 pi_imp = solve_vie2(susc_imp_U, susc_imp)
 
 # Vertex
@@ -720,8 +744,12 @@ for br1 in branches:
             U_pi_imp[br1,br2].data[:,:,0,0] = Uch*pi_imp[br1,br2].data[:,:,0,0]
             U_pi_imp[br1,br2].data[:,:,1,1] = Usp*pi_imp[br1,br2].data[:,:,1,1]
 
-Lambda = conv(three_point_corr, U_pi_imp,
+three_point_corr_U_pi_imp = conv(three_point_corr, U_pi_imp,
               [(2, 0)])
+
+Lambda_test = three_point_corr @ three_point_corr_U_pi_imp #TODO: Check if Lambda same as Lambda_test
+
+Lambda = three_point_corr - three_point_corr_U_pi_imp
 
 #Uq_s2p_K[FW][t,k][0,0]
 # Wprime
@@ -747,13 +775,15 @@ for br1 in branches:
 Uq_piimp = Uq_s2p_K @ pi_imp
 Uq_piimp_Uq = Uq_piimp @ Uq_s2p_K
 
-
 #print(Uq_piimp_Uq[FW,BW].data[0,3,4,1,1])
 
-Uq_piimp = 0.5 * (Uq_piimp + herm_conj(Uq_piimp)) # for now to circumvent the hermicity check !!!!
-Wprime = solve_vie2(Uq_piimp_Uq, Uq_piimp)
+#Uq_piimp = 0.5 * (Uq_piimp + herm_conj(Uq_piimp)) # for now to circumvent the hermicity check !!!!
+Uq_piimp_Uq = 0.5 * (Uq_piimp_Uq + herm_conj(Uq_piimp_Uq))
+W0prime = solve_vie2(-Uq_piimp, Uq_piimp_Uq)
 
 ########################### diagrams #####################################
+
+########################### diagrams  prepare #####################################
 
 #self-energy
 ##g_fft = np.fft.ifftn(g_reshaped, axes=(0,1,2))
@@ -765,7 +795,7 @@ Wprime = solve_vie2(Uq_piimp_Uq, Uq_piimp)
 #    #eps_R[:,:,:,time.index] = eps_fft
 #    eps_R[:,:,:,time.index] = np.fft.ifftn(eps_K, axes=(0,1,2))
 
-eps_R = Gf(mesh=tk_mesh, target_shape=(2, 2))
+#eps_R = Gf(mesh=tk_mesh, target_shape=(2, 2))
 eps_s2p_R = Singular2PKeldyshGF(mesh=tk_mesh, arg_index_shapes=((2,), (2,)))
 eps_s2p_mR = Singular2PKeldyshGF(mesh=tk_mesh, arg_index_shapes=((2,), (2,)))
 eps_s2p_loc = Singular2PKeldyshGF(mesh=t_mesh, arg_index_shapes=((2,), (2,)))
@@ -809,8 +839,8 @@ for time in t_mesh:
             #eps_s2p_R[FW].data[time.linear_index,:,sigm1,sigm2] = np.fft.ifftn(eps_K_FW, axes=(0,1,2)).reshape(nkx*nky*nkz)
             #eps_s2p_R[BW].data[time.linear_index,:,sigm1,sigm2] = np.fft.ifftn(eps_K_BW, axes=(0,1,2)).reshape(nkx*nky*nkz)
             #print(eps_s2p_R[FW][time,:][sigm1,sigm2].data)
-            eps_s2p_R[br].data[time.linear_index,:,sigm,sigm] = np.fft.ifftn(eps_K, axes=(0,1,2)).reshape(nkx*nky*nkz) # K -> R 
-            eps_s2p_mR[br].data[time.linear_index,:,sigm,sigm] = np.fft.fftn(eps_K, axes=(0,1,2)).reshape(nkx*nky*nkz) 
+            eps_s2p_R[br].data[time.linear_index,:,sigm,sigm] = np.fft.ifftn(eps_K, axes=(0,1,2)).reshape(nkx*nky*nkz) # k -> R 
+            eps_s2p_mR[br].data[time.linear_index,:,sigm,sigm] = np.fft.fftn(eps_K, axes=(0,1,2)).reshape(nkx*nky*nkz) # k+q -> mR 
             #eps_s2p_R[FW][time,:][sigm1,sigm2] = np.fft.ifftn(eps_K_FW, axes=(0,1,2)).reshape(nkx*nky*nkz)
             #eps_s2p_R[BW][time,:][sigm1,sigm2] = np.fft.ifftn(eps_K_BW, axes=(0,1,2)).reshape(nkx*nky*nkz)
 print(eps_s2p_R[FW].data[0,:,0,0].reshape(nkx,nky,nkz))
@@ -819,19 +849,21 @@ k_points = list(bz_mesh)
 q0 = k_points[0]
 print(q0)
 
-Uq_s2p_R = Singular2PKeldyshGF(mesh=tk_mesh, arg_index_shapes=((2,), (2,)))
-Uq0 = Singular2PKeldyshGF(mesh=t_mesh, arg_index_shapes=((2,), (2,)))
+Uq_tilde_s2p_R = Singular2PKeldyshGF(mesh=tk_mesh, arg_index_shapes=((2,), (2,)))
+Uq0_tilde = Singular2PKeldyshGF(mesh=t_mesh, arg_index_shapes=((2,), (2,)))
 for time in t_mesh:
     for ch in range(2):
         for br in branches:
-            Uq = Uq_s2p_K[br][time,:][ch,ch].data.reshape(nkx,nky,nkz)
-            if ch == 0: # Uch
-                Uq = Uq - 0.5*U
-                Uq0[br][time][ch,ch] = Uq_s2p_K[br][time,q0][ch,ch] - 0.5*U
-            else: # Usp
-                Uq = Uq + 0.5*U
-                Uq0[br][time][ch,ch] = Uq_s2p_K[br][time,q0][ch,ch] + 0.5*U
-            Uq_s2p_R[br].data[time.linear_index,:,ch,ch] = np.fft.ifftn(Uq, axes=(0,1,2)).reshape(nkx*nky*nkz) # K -> R 
+            Uq_tilde_K = Uq_tilde_s2p_K[br][time,:][ch,ch].data.reshape(nkx,nky,nkz)
+            Uq0_tilde[br][time][ch,ch] = Uq_tilde_s2p_K[br][time,q0][ch,ch]
+            #if ch == 0: # Uch
+            #    Uq_tilde = Uq - 0.5*Uch
+            #    Uq0_tilde[br][time][ch,ch] = Uq_s2p_K[br][time,q0][ch,ch] - 0.5*Uch
+            #else: # Usp
+            #    Uq_tilde = Uq - 0.5*Usp
+            #    Uq0_tilde[br][time][ch,ch] = Uq_s2p_K[br][time,q0][ch,ch] - 0.5*Usp
+            Uq_tilde_s2p_R[br].data[time.linear_index,:,ch,ch] = np.fft.ifftn(Uq_tilde_K, axes=(0,1,2)).reshape(nkx*nky*nkz) # K -> R 
+
 
 Gd0_reg_R = KeldyshGF(mesh=ttk_mesh, arg_index_shapes=((2,), (2,)))
 Gd0_reg_mR = KeldyshGF(mesh=ttk_mesh, arg_index_shapes=((2,), (2,)))
@@ -840,21 +872,11 @@ for time1, time2 in tt_mesh:
     for br1 in branches:
         for br2 in branches:
             for sigm in range(2): # spin up and dn
-                Gd0_reg_loc[br1,br2][time1,time2][sigm,sigm] = np.mean(Gd0_reg_test[br1,br2][time1,time2,:][sigm,sigm].data)
-                Gd0_reg_K = Gd0_reg_test[br1,br2][time1,time2,:][sigm,sigm].data.reshape(nkx,nky,nkz)
+                Gd0_reg_loc[br1,br2][time1,time2][sigm,sigm] = np.mean(Gd0_reg[br1,br2][time1,time2,:][sigm,sigm].data)
+                Gd0_reg_K = Gd0_reg[br1,br2][time1,time2,:][sigm,sigm].data.reshape(nkx,nky,nkz)
                 Gd0_reg_R[br1,br2].data[time1.linear_index,time2.linear_index,:,sigm,sigm] = np.fft.ifftn(Gd0_reg_K, axes=(0,1,2)).reshape(nkx*nky*nkz) # K -> R 
                 Gd0_reg_mR[br1,br2].data[time1.linear_index,time2.linear_index,:,sigm,sigm] = np.fft.fftn(Gd0_reg_K, axes=(0,1,2)).reshape(nkx*nky*nkz) # K -> -R 
 
-
-Wprime_R = KeldyshGF(mesh=ttk_mesh, arg_index_shapes=((2,), (2,)))
-Wprime_q0 = KeldyshGF(mesh=tt_mesh, arg_index_shapes=((2,), (2,)))
-for time1, time2 in tt_mesh:
-    for br1 in branches:
-        for br2 in branches:
-            for ch in range(2): # channel charge and spin
-                Wprime_q0[br1,br2][time1,time2][ch,ch] = Wprime[br1,br2][time1,time2,q0][ch,ch]
-                Wprime_K = Wprime[br1,br2][time1,time2,:][ch,ch].data.reshape(nkx,nky,nkz)
-                Wprime_R[br1,br2].data[time1.linear_index,time2.linear_index,:,ch,ch] = np.fft.ifftn(Wprime_K, axes=(0,1,2)).reshape(nkx*nky*nkz) # k+q -> R 
 
 # TODO this won't work if k-mesh does not start from Gamma point
 # TODO check what to use for W and Uq np.fft.ifftn or np.fft.fftn (check also for Gd and eps) !!!!!!
@@ -865,125 +887,9 @@ print(dir(Gd0_reg_R))
 #print(Gd0_reg_R.n_args)
 print(Gd0_reg_R[FW,FW].data.shape)
 
-LambdaGd0_reg_R = conv(Lambda, Gd0_reg_R,
-             [(1, 0)])
+########################### diagrams  prepare  END  #####################################
 
-#Lambdaeps_s2p_R = conv(Lambda, eps_s2p_R,
-#             [(1, 0)])
-#eps_s2p_R
-
-print(LambdaGd0_reg_R.n_args)
-print(LambdaGd0_reg_R[FW,FW,FW].data.shape)
-#eps_s2p_R = Singular2PKeldyshGF.from_retime(eps_R)
-#eps_s2p_K[FW][t,:][0,0].data
-
-Wprime_RLambda = conv(Wprime_R, Lambda,
-             [(1, 2)])
-
-print(Wprime_RLambda.n_args)
-print(Wprime_RLambda[FW,FW,FW].data.shape)
-
-"""
-Lambdaeps_s2p_R = KeldyshGF(mesh=tttk_mesh, arg_index_shapes=((2,), (2,), (2,)))
-Uq_s2p_RLambda = KeldyshGF(mesh=tttk_mesh, arg_index_shapes=((2,), (2,), (2,)))
-for br1 in branches:
-    for br2 in branches:
-        for br3 in branches:
-            for sigm in range(2): # spin up and dn
-                for ch in range(2): # channel
-                    for k in bz_mesh:
-                        for time1, time2, time3 in MeshProduct(t_mesh, t_mesh, t_mesh):
-                            Lambdaeps_s2p_R[br1,br2,br3][time1,time2,time3,k][sigm, sigm, ch] = \
-                                            Lambda[br1,br2,br3][time1,time2,time3][sigm, sigm, ch] \
-                                            * eps_s2p_R[br2][time2,k][sigm,sigm]
-                            Uq_s2p_RLambda[br1,br2,br3][time1,time2,time3,k][sigm, sigm, ch] = \
-                                            Uq_s2p_R[br3][time3,k][ch,ch] \
-                                            * Lambda[br1,br2,br3][time1,time2,time3][sigm, sigm, ch]
-"""
-
-Lambdaeps_s2p_R = conv(Lambda, eps_s2p_R,
-             [(1, 0)])
-Uq_s2p_RLambda = conv(Uq_s2p_R, Lambda,
-             [(1, 2)])
-
-sigma_R_1 = conv(LambdaGd0_reg_R, Wprime_RLambda,
-             [(1, 0), (2, 1)])                            
-
-sigma_R_2 = conv(Lambdaeps_s2p_R, Wprime_RLambda,
-               [(1, 0), (2, 1)])
-
-sigma_R_3 = conv(LambdaGd0_reg_R, Uq_s2p_RLambda,
-               [(1, 0), (2, 1)])
-
-sigma_R_4 = conv(Lambdaeps_s2p_R, Uq_s2p_RLambda,
-               [(1, 0), (2, 1)])
-
-sigma_R = sigma_R_1 + sigma_R_2 + sigma_R_3 + sigma_R_4
-
-del LambdaGd0_reg_R, Wprime_RLambda, Lambdaeps_s2p_R, Uq_s2p_RLambda
-
-sigma_K = KeldyshGF(mesh=ttk_mesh, arg_index_shapes=((2,), (2,)))
-for time1, time2 in tt_mesh:
-    for br1 in branches:
-        for br2 in branches:
-            for sigm in range(2): # spin up and dn
-                sigma = sigma_R[br1,br2][time1,time2,:][sigm,sigm].data.reshape(nkx,nky,nkz)
-                sigma_K[br1,br2].data[time1.linear_index,time2.linear_index,:,sigm,sigm] = np.fft.ifftn(sigma, axes=(0,1,2)).reshape(nkx*nky*nkz) # K -> R 
-
-
-
-############# Tadpole #####################
-"""
-#Lambdaeps_s2p_loc = KeldyshGF(mesh=ttt_mesh, arg_index_shapes=((2,), (2,), (2,)))
-Lambdaeps_s2p_loc = KeldyshGF(mesh=t_mesh, arg_index_shapes=((2,),))
-LambdaUq0 = KeldyshGF(mesh=ttt_mesh, arg_index_shapes=((2,), (2,), (2,)))
-for br1 in branches:
-    for br2 in branches:
-        for br3 in branches:
-            for sigm in range(2): # spin up and dn
-                for ch in range(2): # channel
-                    for time1, time2, time3 in MeshProduct(t_mesh, t_mesh, t_mesh):
-                        #Lambdaeps_s2p_loc[br1,br1,br3][time1,time1,time3][sigm, sigm, ch] = \
-                        #                Lambda[br1,br1,br3][time1,time1,time3][sigm, sigm, ch] \
-                        #                * eps_s2p_loc[br1][time1][sigm,sigm]
-                        Lambdaeps_s2p_loc[br3][time3][ch] += \
-                                        Lambda[br1,br1,br3][time1,time1,time3][sigm, sigm, ch] \
-                                        * eps_s2p_loc[br1][time1][sigm,sigm]
-                        LambdaUq0[br1,br2,br3][time1,time2,time3][sigm, sigm, ch] = \
-                                        Lambda[br1,br2,br3][time1,time2,time3][sigm, sigm, ch] \
-                                        * Uq0[br3][time3][ch,ch]
-"""
-Lambdaeps_s2p_loc = conv(Lambda, eps_s2p_loc,
-             [(0, 1),(1, 0)])        
-
-LambdaUq0 = conv(Lambda, Uq0,
-             [(2, 0)]) 
-
-
-LambdaWprime_q0 = conv(Lambda, Wprime_q0,
-             [(2, 0)])   
-
-LambdaGd0_reg_loc = conv(Lambda, Gd0_reg_loc,
-             [(0, 1),(1, 0)]) # check indices!!!!!!
-  
-sigma_tadpole_1 = conv(LambdaWprime_q0, LambdaGd0_reg_loc,
-             [(2, 0)]) 
-
-sigma_tadpole_2 = conv(LambdaWprime_q0, Lambdaeps_s2p_loc,
-             [(2, 0)]) 
-
-sigma_tadpole_3 = conv(LambdaUq0, LambdaGd0_reg_loc,
-             [(2, 0)]) 
-
-sigma_tadpole_4 = conv(LambdaUq0, Lambdaeps_s2p_loc,
-             [(2, 0)]) 
-
-sigma_tadpole = sigma_tadpole_1 + sigma_tadpole_2 + sigma_tadpole_3 + sigma_tadpole_4
-
-del LambdaWprime_q0, LambdaUq0, LambdaGd0_reg_loc, Lambdaeps_s2p_loc
-
-############# Tadpole END #####################
-############# Polarization #####################
+########################### Polarization #####################
 
 Lambdaeps_s2p_mR = KeldyshGF(mesh=tttk_mesh, arg_index_shapes=((2,), (2,), (2,)))
 eps_s2p_RLambda = KeldyshGF(mesh=tttk_mesh, arg_index_shapes=((2,), (2,), (2,)))
@@ -1003,33 +909,33 @@ for br1 in branches:
 
 # TODO: !!!!! check  eps_s2p mR vs R which one is which !!!!
 
-Lambdaeps_s2p_mR = conv(Lambda, eps_s2p_mR,
+Lambdaeps_s2p_R = conv(Lambda, eps_s2p_R,
              [(1, 0)])
 
-eps_s2p_RLambda = conv(eps_s2p_mR, Lambda,
+eps_s2p_mRLambda = conv(eps_s2p_mR, Lambda,
              [(0, 1)])
 
 
-LambdaGd0_reg_mR = conv(Lambda, Gd0_reg_mR,
+LambdaGd0_reg_R = conv(Lambda, Gd0_reg_R,
              [(1, 0)])
-Gd0_reg_RLambda = conv(Gd0_reg_R, Lambda,
+Gd0_reg_mRLambda = conv(Gd0_reg_mR, Lambda,
              [(0, 1)])
 
-Pi_R_1 = conv(LambdaGd0_reg_mR, Gd0_reg_RLambda,
+Pi_R_1 = conv(LambdaGd0_reg_R, Gd0_reg_mRLambda,
              [(0, 0), (2, 1)])
 
-Pi_R_2 = conv(Lambdaeps_s2p_mR, Gd0_reg_RLambda,
+Pi_R_2 = conv(Lambdaeps_s2p_R, Gd0_reg_mRLambda,
              [(0, 0),(2, 1)])
 
-Pi_R_3 = conv(LambdaGd0_reg_mR, eps_s2p_RLambda,
+Pi_R_3 = conv(LambdaGd0_reg_R, eps_s2p_mRLambda,
              [(0, 0), (2, 1)])
 
-Pi_R_4 = conv(Lambdaeps_s2p_mR, eps_s2p_RLambda,
+Pi_R_4 = conv(Lambdaeps_s2p_R, eps_s2p_mRLambda,
              [(0, 0), (2, 1)])
 
 Pi_R = Pi_R_1 + Pi_R_2 + Pi_R_3 + Pi_R_4
 
-del LambdaGd0_reg_mR, Lambdaeps_s2p_mR, Gd0_reg_RLambda, eps_s2p_RLambda
+del LambdaGd0_reg_R, Lambdaeps_s2p_mR, Gd0_reg_mRLambda, eps_s2p_RLambda
 
 Pi_K = KeldyshGF(mesh=ttk_mesh, arg_index_shapes=((2,), (2,)))
 for time1, time2 in tt_mesh:
@@ -1039,15 +945,166 @@ for time1, time2 in tt_mesh:
                 Pi = Pi_R[br1,br2][time1,time2,:][sigm,sigm].data.reshape(nkx,nky,nkz)
                 Pi_K[br1,br2].data[time1.linear_index,time2.linear_index,:,sigm,sigm] = np.fft.ifftn(Pi, axes=(0,1,2)).reshape(nkx*nky*nkz) # K -> R 
 
-############# Polarization END #####################
+########################### Polarization END #####################
+
+########################### Full W #####################
+W0prime_Pi_K = W0prime @ Pi_K
+Uq_tilde_s2p_K_Pi_K = Uq_tilde_s2p_K @ Pi_K
+
+mFW = W0prime_Pi_K + Uq_tilde_s2p_K_Pi_K
+mQW = mFW @ Uq_tilde_s2p_K
+QW = W0prime - mQW
+QW = 0.5 * (QW + herm_conj(QW)) # for now to circumvent the hermicity check !!!!
+mFW = 0.5 * (mFW + herm_conj(mFW)) # for now to circumvent the hermicity check !!!!
+Wprime = solve_vie2(-mFW, QW)
+
+Wprime_R = KeldyshGF(mesh=ttk_mesh, arg_index_shapes=((2,), (2,)))
+W0prime_q0 = KeldyshGF(mesh=tt_mesh, arg_index_shapes=((2,), (2,)))
+for time1, time2 in tt_mesh:
+    for br1 in branches:
+        for br2 in branches:
+            for ch in range(2): # channel charge and spin
+                W0prime_q0[br1,br2][time1,time2][ch,ch] = W0prime[br1,br2][time1,time2,q0][ch,ch]
+                Wprime_K = Wprime[br1,br2][time1,time2,:][ch,ch].data.reshape(nkx,nky,nkz)
+                Wprime_R[br1,br2].data[time1.linear_index,time2.linear_index,:,ch,ch] = np.fft.ifftn(Wprime_K, axes=(0,1,2)).reshape(nkx*nky*nkz) # k+q -> R 
+
+########################### Full W END #####################
+########################### Self-Energy #####################################
+"""
+Lambdaeps_s2p_R = KeldyshGF(mesh=tttk_mesh, arg_index_shapes=((2,), (2,), (2,)))
+Uq_tilde_s2p_RLambda = KeldyshGF(mesh=tttk_mesh, arg_index_shapes=((2,), (2,), (2,)))
+for br1 in branches:
+    for br2 in branches:
+        for br3 in branches:
+            for sigm in range(2): # spin up and dn
+                for ch in range(2): # channel
+                    for k in bz_mesh:
+                        for time1, time2, time3 in MeshProduct(t_mesh, t_mesh, t_mesh):
+                            Lambdaeps_s2p_R[br1,br2,br3][time1,time2,time3,k][sigm, sigm, ch] = \
+                                            Lambda[br1,br2,br3][time1,time2,time3][sigm, sigm, ch] \
+                                            * eps_s2p_R[br2][time2,k][sigm,sigm]
+                            Uq_tilde_s2p_RLambda[br1,br2,br3][time1,time2,time3,k][sigm, sigm, ch] = \
+                                            Uq_tilde_s2p_R[br3][time3,k][ch,ch] \
+                                            * Lambda[br1,br2,br3][time1,time2,time3][sigm, sigm, ch]
+"""
+LambdaGd0_reg_mR = conv(Lambda, Gd0_reg_mR,
+             [(1, 0)])
+
+print(LambdaGd0_reg_mR.n_args)
+print(LambdaGd0_reg_mR[FW,FW,FW].data.shape)
+
+Wprime_RLambda = conv(Wprime_R, Lambda,
+             [(1, 2)])
+
+print(Wprime_RLambda.n_args)
+print(Wprime_RLambda[FW,FW,FW].data.shape)
+
+Lambdaeps_s2p_mR = conv(Lambda, eps_s2p_mR,
+             [(1, 0)])
+Uq_tilde_s2p_RLambda = conv(Uq_tilde_s2p_R, Lambda,
+             [(1, 2)])
+
+sigma_R_1 = conv(LambdaGd0_reg_mR, Wprime_RLambda,
+             [(1, 0), (2, 1)])                            
+
+sigma_R_2 = conv(Lambdaeps_s2p_mR, Wprime_RLambda,
+               [(1, 0), (2, 1)])
+
+sigma_R_3 = conv(LambdaGd0_reg_mR, Uq_tilde_s2p_RLambda,
+               [(1, 0), (2, 1)])
+
+sigma_R_4 = conv(Lambdaeps_s2p_mR, Uq_tilde_s2p_RLambda,
+               [(1, 0), (2, 1)])
+
+sigma_R = 1j * (sigma_R_1 + sigma_R_2 + sigma_R_3 + sigma_R_4)
+
+del LambdaGd0_reg_mR, Wprime_RLambda, Lambdaeps_s2p_mR, Uq_tilde_s2p_RLambda
+
+sigma_dual_K = KeldyshGF(mesh=ttk_mesh, arg_index_shapes=((2,), (2,)))
+for time1, time2 in tt_mesh:
+    for br1 in branches:
+        for br2 in branches:
+            for sigm in range(2): # spin up and dn
+                sigma = sigma_R[br1,br2][time1,time2,:][sigm,sigm].data.reshape(nkx,nky,nkz)
+                sigma_dual_K[br1,br2].data[time1.linear_index,time2.linear_index,:,sigm,sigm] = np.fft.ifftn(sigma, axes=(0,1,2)).reshape(nkx*nky*nkz) # K -> R 
+
+############# Tadpole #####################
+"""
+#Lambdaeps_s2p_loc = KeldyshGF(mesh=ttt_mesh, arg_index_shapes=((2,), (2,), (2,)))
+Lambdaeps_s2p_loc = KeldyshGF(mesh=t_mesh, arg_index_shapes=((2,),))
+LambdaUq0_tilde = KeldyshGF(mesh=ttt_mesh, arg_index_shapes=((2,), (2,), (2,)))
+for br1 in branches:
+    for br2 in branches:
+        for br3 in branches:
+            for sigm in range(2): # spin up and dn
+                for ch in range(2): # channel
+                    for time1, time2, time3 in MeshProduct(t_mesh, t_mesh, t_mesh):
+                        #Lambdaeps_s2p_loc[br1,br1,br3][time1,time1,time3][sigm, sigm, ch] = \
+                        #                Lambda[br1,br1,br3][time1,time1,time3][sigm, sigm, ch] \
+                        #                * eps_s2p_loc[br1][time1][sigm,sigm]
+                        Lambdaeps_s2p_loc[br3][time3][ch] += \
+                                        Lambda[br1,br1,br3][time1,time1,time3][sigm, sigm, ch] \
+                                        * eps_s2p_loc[br1][time1][sigm,sigm]
+                        LambdaUq0_tilde[br1,br2,br3][time1,time2,time3][sigm, sigm, ch] = \
+                                        Lambda[br1,br2,br3][time1,time2,time3][sigm, sigm, ch] \
+                                        * Uq0_tilde[br3][time3][ch,ch]
+"""
+#Lambdaeps_s2p_loc = conv(Lambda, eps_s2p_loc,
+#             [(0, 1),(1, 0)])        
+
+LambdaUq0_tilde = conv(Lambda, Uq0_tilde,
+             [(2, 0)]) 
+
+LambdaW0prime_q0 = conv(Lambda, W0prime_q0,
+             [(2, 0)])   
+
+LambdaGd0_reg_loc = conv(Lambda, Gd0_reg_loc,
+             [(0, 1),(1, 0)])
+  
+
+sigma_tadpole_1 = conv(LambdaW0prime_q0, LambdaGd0_reg_loc,
+             [(2, 0)]) 
+
+#sigma_tadpole_2 = conv(LambdaWprime_q0, Lambdaeps_s2p_loc,
+#             [(2, 0)]) 
+
+sigma_tadpole_3 = conv(LambdaUq0_tilde, LambdaGd0_reg_loc,
+             [(2, 0)]) 
+
+#sigma_tadpole_4 = conv(LambdaUq0_tilde, Lambdaeps_s2p_loc,
+#             [(2, 0)]) 
+
+sigma_tadpole = -1j*(sigma_tadpole_1 + sigma_tadpole_3)
+#sigma_tadpole = -1j*(sigma_tadpole_1 + sigma_tadpole_2 + sigma_tadpole_3 + sigma_tadpole_4)
+
+del LambdaW0prime_q0, LambdaUq0_tilde, LambdaGd0_reg_loc #, Lambdaeps_s2p_loc
+
+############# Tadpole END #####################
+
+############# Full Self-Energy #####################
+
+print(sigma_dual_K.mesh)
+print(sigma_tadpole.mesh)
+
+sigma_dual_full = KeldyshGF(mesh=ttk_mesh, arg_index_shapes=((2,), (2,)))
+for br1 in branches:
+    for br2 in branches:
+        for sigm in range(2): # spin up and dn
+            for time1, time2 in tt_mesh:
+                for k in bz_mesh:
+                    sigma_dual_full[br1,br2][time1,time2,k][sigm,sigm] = sigma_dual_K[br1,br2][time1,time2,k][sigm,sigm] + sigma_tadpole[br1,br2][time1,time2][sigm,sigm]
+
+############# Full Self-Energy END #####################
+
+########################### Self-Energy END #####################################
 
 K = KeldyshGF(mesh=ttk_mesh, arg_index_shapes=((2,), (2,)))
 for br1 in branches:
     for br2 in branches:
         for k in bz_mesh:
             for time1, time2 in MeshProduct(t_mesh, t_mesh):
-                K[br1,br2][time1,time2,k] = sigma_K[br1,br2][time1,time2,k][:,:] \
-                                                       + gref[br1,br2][time1,time2][:,0,:,0] # subtract loc part
+                K[br1,br2][time1,time2,k] = sigma_dual_full[br1,br2][time1,time2,k][:,:] \
+                                                       + gref[br1,br2][time1,time2][:,0,:,0]
 """
 Keps = KeldyshGF(mesh=ttk_mesh, arg_index_shapes=((2,), (2,)))
 for br1 in branches:
@@ -1063,9 +1120,10 @@ for br1 in branches:
 Keps= K @ eps_s2p_K
 Kdelta = K @ delta      
 
-F = Keps - Kdelta
-F_test = 0.5 * (F + herm_conj(F)) # for now to circumvent the hermicity check !!!!
-Gd0_reg_test = solve_vie2(-F, K)
+FG = Kdelta - Keps
+FG = 0.5 * (FG + herm_conj(FG)) # for now to circumvent the hermicity check !!!!
+K = 0.5 * (K + herm_conj(K)) # for now to circumvent the hermicity check !!!!
+G_latt = solve_vie2(FG, K)
 
 
 """

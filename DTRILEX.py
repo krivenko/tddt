@@ -44,18 +44,19 @@ np.set_printoptions(threshold=np.inf, linewidth=np.inf)
 ########################## Reference system #######################
 
 # Model parameters
-U = 3.0
+U = 1.0
 Uch = U/2
 Usp = -U/2
 mu = 0.5 * U
 #eps = 0.2
 t1 = 1.0 # nearest neighbor hopping 
 t2 = 0.0 # next nearest neighbor hopping
-A = 0.1
+A = 0.0
 Omega = 10
+T = 1.0
 
 # time-mesh
-t_max = 20.0 # 10.0 #20.0
+t_max = 1.0 # 10.0 #20.0
 n_t = 6 #11 #21
 t_mesh = MeshReTime(0, t_max, n_t)
 tt_mesh = MeshProduct(t_mesh, t_mesh) # A 2D mesh as a direct product of t_mesh with itself
@@ -65,7 +66,7 @@ m_interp = MeshReTime(0, t_max, n_t)
 #k-mesh
 lat = BravaisLattice(units=[(1, 0, 0), (0, 1, 0)])  # 2D square lattice
 bz = BrillouinZone(lat)  # Brillouin zone of the lattice
-n_k = 5#3 # Number of k-points along each dimension
+n_k = 2 # Number of k-points along each dimension
 bz_mesh = MeshBrillouinZone(bz, n_k) # k-mesh on 1BZ; 0 - 2pi
 nkx = n_k
 nky = n_k
@@ -301,7 +302,7 @@ h0 = -mu * (n('up', 0) + n('dn', 0)) + U * n('up', 0) * n('dn', 0) \
 init_state = make_equilibrium_init_state(h0,
                                          fermion_indices=fops,
                                          boson_indices=set(),
-                                         temperature=0,
+                                         temperature=T,
                                          params={})
 
 
@@ -1026,7 +1027,7 @@ for time1, time2 in tt_mesh:
         for br2 in branches:
             for sigm in range(2): # spin up and dn
                 sigma = sigma_R[br1,br2][time1,time2,:][sigm,sigm].data.reshape(nkx,nky,nkz)
-                sigma_dual_K[br1,br2].data[time1.linear_index,time2.linear_index,:,sigm,sigm] = np.fft.ifftn(sigma, axes=(0,1,2)).reshape(nkx*nky*nkz) # K -> R 
+                sigma_dual_K[br1,br2].data[time1.linear_index,time2.linear_index,:,sigm,sigm] = np.fft.ifftn(sigma, axes=(0,1,2)).reshape(nkx*nky*nkz) # R -> K 
 
 ############# Tadpole #####################
 """
@@ -1125,6 +1126,7 @@ FG = 0.5 * (FG + herm_conj(FG)) # for now to circumvent the hermicity check !!!!
 K = 0.5 * (K + herm_conj(K)) # for now to circumvent the hermicity check !!!!
 G_latt = solve_vie2(FG, K)
 
+print(G_latt[FW,FW].data[0,:,0,0,0])
 
 """
 A = KeldyshGF(mesh=ttt_mesh, arg_index_shapes=((2, 3), (2, 4), (2, 5)))

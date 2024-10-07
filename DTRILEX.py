@@ -49,15 +49,17 @@ Uch = U/2
 Usp = -U/2
 mu = 0.5 * U
 #eps = 0.2
-t1 = 1.0 # nearest neighbor hopping 
+t1 = 0.1 #0.25 # nearest neighbor hopping 
 t2 = 0.0 # next nearest neighbor hopping
 A = 0.0
 Omega = 10
-T = 1.0
+T = 0.0
+A_x = 0.0
+tx = t1
 
 # time-mesh
-t_max = 1.0 # 10.0 #20.0
-n_t = 6 #11 #21
+t_max = 8.0 # 10.0 #20.0
+n_t = 31 #21
 t_mesh = MeshReTime(0, t_max, n_t)
 tt_mesh = MeshProduct(t_mesh, t_mesh) # A 2D mesh as a direct product of t_mesh with itself
 ttt_mesh = MeshProduct(t_mesh, t_mesh, t_mesh)
@@ -90,20 +92,28 @@ dt_neg = ti(m_interp, np.array([t1*np.exp(-1.j * A * np.cos(Omega * x)) for x in
 print(dt_pos.data)
 print(dt_pos.data.shape)
 
+
+dt_pos_x = ti(m_interp, np.array([tx*np.exp(1.j * A_x * np.cos(Omega * x)) for x in m_interp]))
+dt_neg_x = ti(m_interp, np.array([tx*np.exp(-1.j * A_x * np.cos(Omega * x)) for x in m_interp]))
+
+
 # Lattice dispersion
 
 eps_tk = Gf(mesh=tk_mesh, target_shape=(2, 2))
 
 for t, k in tk_mesh:
     #eps_tk[t, k] = -2 * np.array([[[1, 0], [0, -1]]]) * np.cos(t.value) * (np.cos(k[0]) + np.cos(k[1]))
-    eps_tk[t, k] = -2.0*t1*(np.cos(k[0]-A*np.cos(Omega * t.value))+np.cos(k[1]-A*np.cos(Omega * t.value))) \
-                   -4.0*t2*np.cos(2*(k[0]-A*np.cos(Omega * t.value)))*np.cos(2*(k[1]-A*np.cos(Omega * t.value)))
-    
+    eps_tk[t, k][0, 0] = 2.0*t1*(np.cos(k[0]-A*np.cos(Omega * t.value))+np.cos(k[1]-A*np.cos(Omega * t.value))) \
+                         +4.0*t2*np.cos(2*(k[0]-A*np.cos(Omega * t.value)))*np.cos(2*(k[1]-A*np.cos(Omega * t.value)))
+    eps_tk[t, k][1, 1] = 2.0*t1*(np.cos(k[0]-A*np.cos(Omega * t.value))+np.cos(k[1]-A*np.cos(Omega * t.value))) \
+                         +4.0*t2*np.cos(2*(k[0]-A*np.cos(Omega * t.value)))*np.cos(2*(k[1]-A*np.cos(Omega * t.value)))
+
 eps_loc = np.mean(eps_tk.data, axis = 1)
 
 for t, k in tk_mesh:
     eps_tk[t, k] = eps_tk[t, k] - eps_loc[t.index, :]
-
+#print(eps_tk[0,0].data)
+#exit()
 #print(eps_tk.data[0,0,:,:])
 
 eps_s2p_K = Singular2PKeldyshGF.from_retime(eps_tk)
@@ -123,7 +133,7 @@ def V(axis, sign, t):
     """ axis = x,y
         sign = -1,+1
     """
-    V = t1 * np.exp(sign * 1.j * A * np.cos(Omega * t))
+    V = tx * np.exp(sign * 1.j * A * np.cos(Omega * t))
     return V
 for i in t_mesh:
     print(V('x', +1, i))
@@ -137,8 +147,13 @@ def Vq(k, channel):
 ################################# OLD ################################
 #previous dispersion defined as function. USE: eps_s2p_K
 def eps_k(t1,t2,k,time):
-    eps_k = -2.0*t1*(np.cos(k[0]-A*np.cos(time))+np.cos(k[1]-A*np.cos(time))) \
-            -4.0*t2*np.cos(k[0]-A*np.cos(time))*np.cos(k[1]-A*np.cos(time))
+    eps_k = 2.0*t1*(np.cos(k[0]-A*np.cos(time))+np.cos(k[1]-A*np.cos(time))) \
+            +4.0*t2*np.cos(k[0]-A*np.cos(time))*np.cos(k[1]-A*np.cos(time))
+    return eps_k
+
+def eps_k_simple(t1,k):
+    eps_k = 2.0*t1*(np.cos(k[0])+np.cos(k[1])) #\
+            #-4.0*t2*np.cos(k[0]-A*np.cos(time))*np.cos(k[1]-A*np.cos(time))
     return eps_k
 
 eps_loc = np.zeros(n_t)
@@ -291,13 +306,31 @@ fops = set(product(spin_names, [0, 1, 2, 3, 4]))
 #print(fops)
 
 
-# Initial Hamiltonian #TODO: check which parameters to add 
-h0 = -mu * (n('up', 0) + n('dn', 0)) + U * n('up', 0) * n('dn', 0) \
-     -mu * (n('up', 1) + n('dn', 1)) \
-     -mu * (n('up', 2) + n('dn', 2)) \
-     -mu * (n('up', 3) + n('dn', 3)) \
-     -mu * (n('up', 4) + n('dn', 4)) \
+# Initial Hamiltonian #TODO: check which parameters to add
 
+#h0 = U * n('up', 0) * n('dn', 0)
+
+#h0 = -mu * (n('up', 0) + n('dn', 0)) + U * n('up', 0) * n('dn', 0) \
+#     -mu * (n('up', 1) + n('dn', 1)) \
+#     -mu * (n('up', 2) + n('dn', 2)) \
+#     -mu * (n('up', 3) + n('dn', 3)) \
+#     -mu * (n('up', 4) + n('dn', 4)) \
+
+h0 = -mu * (n('up', 0) + n('dn', 0)) + U * n('up', 0) * n('dn', 0) \
+     -0.0001 * (n('up', 1) + n('dn', 1)) \
+     -0.0001 * (n('up', 2) + n('dn', 2)) \
+     -0.0001 * (n('up', 3) + n('dn', 3)) \
+     -0.0001 * (n('up', 4) + n('dn', 4)) \
+
+h0 = h0 + \
+    sum(dt_pos_x * c_dag(sn, 0) * c(sn, 1) + dt_neg_x * c_dag(sn, 1) * c(sn, 0)
+        for sn in spin_names) + \
+    sum(dt_pos_x * c_dag(sn, 0) * c(sn, 2) + dt_neg_x * c_dag(sn, 2) * c(sn, 0)
+        for sn in spin_names) + \
+    sum(dt_neg_x * c_dag(sn, 0) * c(sn, 3) + dt_pos_x * c_dag(sn, 3) * c(sn, 0)
+        for sn in spin_names) + \
+    sum(dt_neg_x * c_dag(sn, 0) * c(sn, 4) + dt_pos_x * c_dag(sn, 4) * c(sn, 0)
+        for sn in spin_names)
 
 init_state = make_equilibrium_init_state(h0,
                                          fermion_indices=fops,
@@ -317,15 +350,17 @@ h = h0 + \
     sum(dt_neg * c_dag(sn, 0) * c(sn, 4) + dt_pos * c_dag(sn, 4) * c(sn, 0)
         for sn in spin_names)
 
+h = h0
+
 #h = h0 + \
-#    sum(V('y', 1) * c_dag(sn, 0) * c(sn, 1) + V('y', -1) * c_dag(sn, 1) * c(sn, 0)
-#          for sn in spin_names) + \
-#    sum(V('x', 1) * c_dag(sn, 0) * c(sn, 2) + V('x', -1) * c_dag(sn, 2) * c(sn, 0)
-#          for sn in spin_names) + \
-#    sum(V('y', -1) * c_dag(sn, 0) * c(sn, 3) + V('y', 1) * c_dag(sn, 3) * c(sn, 0)
-#          for sn in spin_names) + \
-#    sum(V('x', -1) * c_dag(sn, 0) * c(sn, 4) + V('x', 1) * c_dag(sn, 4) * c(sn, 0)
-#          for sn in spin_names)
+#    sum(2.0 * dt_pos * c_dag(sn, 0) * c(sn, 1) + 2.0 * dt_neg * c_dag(sn, 1) * c(sn, 0)
+#        for sn in spin_names) + \
+#    sum(2.0 * dt_pos * c_dag(sn, 0) * c(sn, 2) + 2.0 * dt_neg * c_dag(sn, 2) * c(sn, 0)
+#        for sn in spin_names) + \
+#    sum(2.0 * dt_neg * c_dag(sn, 0) * c(sn, 3) + 2.0 * dt_pos * c_dag(sn, 3) * c(sn, 0)
+#        for sn in spin_names) + \
+#    sum(2.0 * dt_neg * c_dag(sn, 0) * c(sn, 4) + 2.0 * dt_pos * c_dag(sn, 4) * c(sn, 0)
+#        for sn in spin_names)
 
 
 params = {}
@@ -376,7 +411,23 @@ for br1 in branches:
             gref[br1,br2].data[...,0,i,0,i] = gf_ref['up'][br1,br2].data[...,i,i]
             gref[br1,br2].data[...,1,i,1,i] = gf_ref['dn'][br1,br2].data[...,i,i] #TODO: multiply by -i (see eq. 32) ?????????
 
+with open('data/tddt_ref_sys_t0_loc.txt', 'w') as file:
+    # Loop to generate data
+    file.write(f"# (FW,BW).local (FW,BW).local)\n")
+    for t in t_mesh:
+        # Write data to the first and second columnu
+        file.write("{} {} {} {}\n".format(gf_ref['up'][FW,FW].data[0,t.index,0,0].real, gf_ref['up'][FW,FW].data[0,t.index,0,0].imag, 
+                                          gf_ref['up'][FW,BW].data[0,t.index,0,0].real, gf_ref['up'][FW,BW].data[0,t.index,0,0].imag))
 
+with open('data/tddt_ref_sys_01.txt', 'w') as file:
+    # Loop to generate data
+    file.write(f"# (FW,BW).local (FW,BW).local)\n")
+    for t in t_mesh:
+        # Write data to the first and second columnu
+        file.write("{} {} {} {}\n".format(gf_ref['up'][FW,FW].data[0,t.index,0,1].real, gf_ref['up'][FW,FW].data[0,t.index,0,1].imag, 
+                                          gf_ref['up'][FW,BW].data[0,t.index,0,1].real, gf_ref['up'][FW,BW].data[0,t.index,0,1].imag))
+        
+#exit()
 # Hybridisation function delta
 delta = KeldyshGF(mesh=tt_mesh, arg_index_shapes=((2,), (2,)))
 
@@ -461,6 +512,7 @@ for br1 in branches:
                                             + eps_gimp_eps[br1,br2][time1,time2,k] \
                                             - delta_gimp_eps[br1,br2][time1,time2,k]
 
+
 # eps_tilde = eps_s2p_K - delta # TODO create new object (maybe)
 
 #Q = eps_gimp_eps - eps_gimp_delta - delta_gimp_eps # + delta_gimp_delta  <- include
@@ -521,10 +573,14 @@ for br1 in branches:
 
 
 print('F is Hermitian:', F.is_hermitian())
+
 F = 0.5 * (F + herm_conj(F)) # for now to circumvent the check !!!!
-
 Gd0_reg = solve_vie2(F, Q)
+del F
 
+
+
+#exit()
 ########################## CHECK GD0 ##############################
 Gd0Gd0_h = herm_conj(Gd0_reg @ Gd0_reg)
 Gd0_hGd0_h = herm_conj(Gd0_reg) @ herm_conj(Gd0_reg)
@@ -699,8 +755,8 @@ for br1 in branches:
             susc_imp_U[br1,br2].data[:,:,1,1] = susc_imp[br1,br2].data[:,:,1,1]*Usp
 
 # Impurity polarization
-susc_imp = 0.5 * (susc_imp + herm_conj(susc_imp)) # for now to circumvent the hermicity check !!!!
-susc_imp_U = 0.5 * (susc_imp_U + herm_conj(susc_imp_U))
+#susc_imp = 0.5 * (susc_imp + herm_conj(susc_imp)) # for now to circumvent the hermicity check !!!!
+#susc_imp_U = 0.5 * (susc_imp_U + herm_conj(susc_imp_U))
 
 pi_imp = solve_vie2(susc_imp_U, susc_imp)
 
@@ -751,7 +807,7 @@ three_point_corr_U_pi_imp = conv(three_point_corr, U_pi_imp,
 Lambda_test = three_point_corr @ three_point_corr_U_pi_imp #TODO: Check if Lambda same as Lambda_test
 
 Lambda = three_point_corr - three_point_corr_U_pi_imp
-
+del three_point_corr, three_point_corr_U_pi_imp
 #Uq_s2p_K[FW][t,k][0,0]
 # Wprime
 """
@@ -819,6 +875,7 @@ for t, k in tk_mesh:
     #print('eps_s2p_K 6: ', eps_s2p_K[FW][t,:][0,0].reshape(4))
     #print('eps_s2p_R data: ', eps_s2p_R[FW][t,k][0,0].data.reshape(4))
 
+
 #exit()
 #print(eps_R)
 #print(eps_s2p_K)
@@ -882,7 +939,6 @@ for time1, time2 in tt_mesh:
 # TODO this won't work if k-mesh does not start from Gamma point
 # TODO check what to use for W and Uq np.fft.ifftn or np.fft.fftn (check also for Gd and eps) !!!!!!
 
-
 print(Lambda[FW,FW,FW].data.shape)
 print(dir(Gd0_reg_R))
 #print(Gd0_reg_R.n_args)
@@ -892,21 +948,22 @@ print(Gd0_reg_R[FW,FW].data.shape)
 
 ########################### Polarization #####################
 
-Lambdaeps_s2p_mR = KeldyshGF(mesh=tttk_mesh, arg_index_shapes=((2,), (2,), (2,)))
-eps_s2p_RLambda = KeldyshGF(mesh=tttk_mesh, arg_index_shapes=((2,), (2,), (2,)))
-for br1 in branches:
-    for br2 in branches:
-        for br3 in branches:
-            for sigm in range(2): # spin up and dn
-                for ch in range(2): # channel
-                    for k in bz_mesh:
-                        for time1, time2, time3 in MeshProduct(t_mesh, t_mesh, t_mesh):
-                            Lambdaeps_s2p_mR[br1,br2,br3][time1,time2,time3,k][sigm, sigm, ch] = \
-                                            Lambda[br1,br2,br3][time1,time2,time3][sigm, sigm, ch] \
-                                            * eps_s2p_mR[br2][time2,k][sigm,sigm]
-                            eps_s2p_RLambda[br1,br2,br3][time1,time2,time3,k][sigm, sigm, ch] = \
-                                            Lambda[br1,br2,br3][time1,time2,time3][sigm, sigm, ch] \
-                                            * eps_s2p_R[br2][time2,k][sigm,sigm]
+#Lambdaeps_s2p_mR = KeldyshGF(mesh=tttk_mesh, arg_index_shapes=((2,), (2,), (2,)))
+#eps_s2p_RLambda = KeldyshGF(mesh=tttk_mesh, arg_index_shapes=((2,), (2,), (2,)))
+#for br1 in branches:
+#    for br2 in branches:
+#        for br3 in branches:
+#            for sigm in range(2): # spin up and dn
+#                for ch in range(2): # channel
+#                    for k in bz_mesh:
+#                        for time1, time2, time3 in MeshProduct(t_mesh, t_mesh, t_mesh):
+#                            Lambdaeps_s2p_mR[br1,br2,br3][time1,time2,time3,k][sigm, sigm, ch] = \
+#                                            Lambda[br1,br2,br3][time1,time2,time3][sigm, sigm, ch] \
+#                                            * eps_s2p_mR[br2][time2,k][sigm,sigm]
+#                            eps_s2p_RLambda[br1,br2,br3][time1,time2,time3,k][sigm, sigm, ch] = \
+#                                            Lambda[br1,br2,br3][time1,time2,time3][sigm, sigm, ch] \
+#                                            * eps_s2p_R[br2][time2,k][sigm,sigm]
+
 
 # TODO: !!!!! check  eps_s2p mR vs R which one is which !!!!
 
@@ -922,6 +979,8 @@ LambdaGd0_reg_R = conv(Lambda, Gd0_reg_R,
 Gd0_reg_mRLambda = conv(Gd0_reg_mR, Lambda,
              [(0, 1)])
 
+
+
 Pi_R_1 = conv(LambdaGd0_reg_R, Gd0_reg_mRLambda,
              [(0, 0), (2, 1)])
 
@@ -934,9 +993,12 @@ Pi_R_3 = conv(LambdaGd0_reg_R, eps_s2p_mRLambda,
 Pi_R_4 = conv(Lambdaeps_s2p_R, eps_s2p_mRLambda,
              [(0, 0), (2, 1)])
 
+
+
 Pi_R = Pi_R_1 + Pi_R_2 + Pi_R_3 + Pi_R_4
 
-del LambdaGd0_reg_R, Lambdaeps_s2p_mR, Gd0_reg_mRLambda, eps_s2p_RLambda
+del LambdaGd0_reg_R, Lambdaeps_s2p_R, Gd0_reg_mRLambda, eps_s2p_mRLambda
+del Pi_R_1, Pi_R_2, Pi_R_3, Pi_R_4
 
 Pi_K = KeldyshGF(mesh=ttk_mesh, arg_index_shapes=((2,), (2,)))
 for time1, time2 in tt_mesh:
@@ -952,12 +1014,19 @@ for time1, time2 in tt_mesh:
 W0prime_Pi_K = W0prime @ Pi_K
 Uq_tilde_s2p_K_Pi_K = Uq_tilde_s2p_K @ Pi_K
 
-mFW = W0prime_Pi_K + Uq_tilde_s2p_K_Pi_K
+#mFW = W0prime_Pi_K + Uq_tilde_s2p_K_Pi_K # original
+mFW = Uq_tilde_s2p_K_Pi_K
 mQW = mFW @ Uq_tilde_s2p_K
-QW = W0prime - mQW
-QW = 0.5 * (QW + herm_conj(QW)) # for now to circumvent the hermicity check !!!!
+QW = W0prime - mQW 
+
+QW = -0.5 * (QW + herm_conj(QW)) # for now to circumvent the hermicity check !!!!
 mFW = 0.5 * (mFW + herm_conj(mFW)) # for now to circumvent the hermicity check !!!!
+#Wprime = solve_vie2(Pi_K, QW)
+#exit()
 Wprime = solve_vie2(-mFW, QW)
+
+del mFW, mQW, QW, W0prime_Pi_K, Uq_tilde_s2p_K_Pi_K
+#exit()
 
 Wprime_R = KeldyshGF(mesh=ttk_mesh, arg_index_shapes=((2,), (2,)))
 W0prime_q0 = KeldyshGF(mesh=tt_mesh, arg_index_shapes=((2,), (2,)))
@@ -1020,6 +1089,7 @@ sigma_R_4 = conv(Lambdaeps_s2p_mR, Uq_tilde_s2p_RLambda,
 sigma_R = 1j * (sigma_R_1 + sigma_R_2 + sigma_R_3 + sigma_R_4)
 
 del LambdaGd0_reg_mR, Wprime_RLambda, Lambdaeps_s2p_mR, Uq_tilde_s2p_RLambda
+del sigma_R_1, sigma_R_2, sigma_R_3,sigma_R_4
 
 sigma_dual_K = KeldyshGF(mesh=ttk_mesh, arg_index_shapes=((2,), (2,)))
 for time1, time2 in tt_mesh:
@@ -1029,6 +1099,7 @@ for time1, time2 in tt_mesh:
                 sigma = sigma_R[br1,br2][time1,time2,:][sigm,sigm].data.reshape(nkx,nky,nkz)
                 sigma_dual_K[br1,br2].data[time1.linear_index,time2.linear_index,:,sigm,sigm] = np.fft.ifftn(sigma, axes=(0,1,2)).reshape(nkx*nky*nkz) # R -> K 
 
+del sigma_R 
 ############# Tadpole #####################
 """
 #Lambdaeps_s2p_loc = KeldyshGF(mesh=ttt_mesh, arg_index_shapes=((2,), (2,), (2,)))
@@ -1095,6 +1166,7 @@ for br1 in branches:
                 for k in bz_mesh:
                     sigma_dual_full[br1,br2][time1,time2,k][sigm,sigm] = sigma_dual_K[br1,br2][time1,time2,k][sigm,sigm] + sigma_tadpole[br1,br2][time1,time2][sigm,sigm]
 
+del sigma_dual_K, sigma_tadpole
 ############# Full Self-Energy END #####################
 
 ########################### Self-Energy END #####################################
@@ -1106,27 +1178,213 @@ for br1 in branches:
             for time1, time2 in MeshProduct(t_mesh, t_mesh):
                 K[br1,br2][time1,time2,k] = sigma_dual_full[br1,br2][time1,time2,k][:,:] \
                                                        + gref[br1,br2][time1,time2][:,0,:,0]
-"""
-Keps = KeldyshGF(mesh=ttk_mesh, arg_index_shapes=((2,), (2,)))
+
+L = KeldyshGF(mesh=ttk_mesh, arg_index_shapes=((2,), (2,)))
 for br1 in branches:
     for br2 in branches:
         for k in bz_mesh:
             for time1, time2 in MeshProduct(t_mesh, t_mesh):
+                L[br1,br2][time1,time2,k] = gref[br1,br2][time1,time2][:,0,:,0]
+
+
+K_test = KeldyshGF(mesh=tt_mesh, arg_index_shapes=((2,), (2,)))
+for br1 in branches:
+    for br2 in branches:
+        for k in bz_mesh:
+            for time1, time2 in MeshProduct(t_mesh, t_mesh):
+                K_test[br1,br2][time1,time2] = gref[br1,br2][time1,time2][:,0,:,0]
+
+
+Keps_new = KeldyshGF(mesh=ttk_mesh, arg_index_shapes=((2,), (2,)))
+for br1 in branches:
+    for br2 in branches:
+        for k in bz_mesh:
+            print(k[0])
+            for time1, time2 in MeshProduct(t_mesh, t_mesh):
                 #eps_gimp[br1,br2][time1,time2,k] = eps_k(t1,t2,k,time1.value) \
                 #        * gref[br1,br2][time1,time2][:,0,:,0] # subtract loc part
-                K[br1,br2][time1,time2,k] = K[br1,br2][time1,time2,k]  \
-                                            * eps_s2p_K[br2][time2,k]
-"""
+                #K[br1,br2][time1,time2,k] = K[br1,br2][time1,time2,k]  \
+                #                            * eps_s2p_K[br2][time2,k]
+                Keps_new[br1,br2][time1,time2,k] = K_test[br1,br2][time1,time2] \
+                                                   * eps_k_simple(t1,k) #* 0.0 # eps_k(t1,k)
+                #K[br1,br2][time1,time2,k] = eps_k_simple(t1,k)                           
 
-Keps= K @ eps_s2p_K
+#exit()
+Keps = K @ eps_s2p_K
+print('Keps00:', Keps[FW,FW].data[0,0,:])
+print('Keps01:', Keps[FW,FW].data[0,1,:])
+print('check')
+#Keps = Keps_new
+print('Keps_new00:', Keps_new[FW,FW].data[0,0,:])
+print('Keps_new01:', Keps_new[FW,FW].data[0,1,:])
+#exit()
 Kdelta = K @ delta      
 
+#print(Keps[FW,FW].data)
+#print('check')
+#exit()
 FG = Kdelta - Keps
 FG = 0.5 * (FG + herm_conj(FG)) # for now to circumvent the hermicity check !!!!
 K = 0.5 * (K + herm_conj(K)) # for now to circumvent the hermicity check !!!!
 G_latt = solve_vie2(FG, K)
+G_latt_CPT = solve_vie2(FG, L)
 
-print(G_latt[FW,FW].data[0,:,0,0,0])
+del Keps, Kdelta, FG, K, L
+
+
+Gd0_K_full = K_test @ Gd0_reg + K_test @ eps_s2p_K
+Gd0_K_full = Gd0_K_full @ K_test
+
+#Gd0_K_full = K_test @ Gd0_reg
+#Gd0_K_full = Gd0_K_full @ Gd0_reg 
+#Gd0_K_full = K_test @ Gd0_reg
+
+G_latt_R = KeldyshGF(mesh=ttk_mesh, arg_index_shapes=((2,), (2,)))
+G_latt_CPT_R = KeldyshGF(mesh=ttk_mesh, arg_index_shapes=((2,), (2,)))
+G_latt_mR = KeldyshGF(mesh=ttk_mesh, arg_index_shapes=((2,), (2,)))
+Gd0_full_R = KeldyshGF(mesh=ttk_mesh, arg_index_shapes=((2,), (2,)))
+for time1, time2 in tt_mesh:
+    for br1 in branches:
+        for br2 in branches:
+            for sigm in range(2): # spin up and dn
+                GR = G_latt[br1,br2][time1,time2,:][sigm,sigm].data.reshape(nkx,nky,nkz)
+                GR_CPT  = G_latt_CPT[br1,br2][time1,time2,:][sigm,sigm].data.reshape(nkx,nky,nkz)
+
+                G_latt_CPT_R[br1,br2].data[time1.linear_index,time2.linear_index,:,sigm,sigm] = np.fft.ifftn(GR_CPT, axes=(0,1,2)).reshape(nkx*nky*nkz) # K -> R 
+                
+                G_latt_R[br1,br2].data[time1.linear_index,time2.linear_index,:,sigm,sigm] = np.fft.ifftn(GR, axes=(0,1,2)).reshape(nkx*nky*nkz) # K -> R                 
+                G_latt_mR[br1,br2].data[time1.linear_index,time2.linear_index,:,sigm,sigm] = np.fft.fftn(GR, axes=(0,1,2)).reshape(nkx*nky*nkz) # K -> -R 
+
+                Gd0_full_K = Gd0_K_full[br1,br2][time1,time2,:][sigm,sigm].data.reshape(nkx,nky,nkz)
+                Gd0_full_R[br1,br2].data[time1.linear_index,time2.linear_index,:,sigm,sigm] = np.fft.ifftn(Gd0_full_K, axes=(0,1,2)).reshape(nkx*nky*nkz) # K -> R 
+
+
+greff_2 = K_test @ K_test
+greff_2 = greff_2 * 2.0*t1 #+ K_test
+
+
+
+with open('data/tddt_Gd0_R.txt', 'w') as file:
+    # Loop to generate data
+    for t in t_mesh:
+        # Write data to the first and second columns
+        file.write("{} {} {} {}\n".format(Gd0_full_R[FW,FW].data[0,t.index,1,0,0].real, Gd0_full_R[FW,FW].data[0,t.index,1,0,0].imag, Gd0_full_R[FW,BW].data[0,t.index,1,0,0].real, Gd0_full_R[FW,BW].data[0,t.index,1,0,0].imag))
+
+with open('data/gref_2.txt', 'w') as file:
+    # Loop to generate data
+    file.write(f"# (FW,BW).local (FW,BW).local)\n")
+    for t in t_mesh:
+        # Write data to the first and second columnu
+        file.write("{} {} {} {}\n".format(greff_2[FW,FW].data[0,t.index,0,0].real, greff_2[FW,FW].data[0,t.index,0,0].imag, 
+                                          greff_2[FW,BW].data[0,t.index,0,0].real, greff_2[FW,BW].data[0,t.index,0,0].imag))
+
+with open('data/tddt_t0_loc.txt', 'w') as file:
+    # Loop to generate data
+    file.write(f"# (FW,BW).local (FW,BW).local)\n")
+    for t in t_mesh:
+        # Write data to the first and second columnu
+        file.write("{} {} {} {}\n".format(np.sum(G_latt[FW,FW].data[0,t.index,:,0,0].real)/4.0, np.sum(G_latt[FW,FW].data[0,t.index,:,0,0].imag)/4.0, 
+                                          np.sum(G_latt[FW,BW].data[0,t.index,:,0,0].real)/4.0, np.sum(G_latt[FW,BW].data[0,t.index,:,0,0].imag)/4.0))
+
+with open('data/tddt_CPT.txt', 'w') as file:
+    # Loop to generate data
+    file.write(f"# (FW,BW).local (FW,BW).local)\n")
+    for t in t_mesh:
+        # Write data to the first and second columnu
+        file.write("{} {} {} {}\n".format(np.sum(G_latt_CPT[FW,FW].data[0,t.index,:,0].real)/4.0, np.sum(G_latt_CPT[FW,FW].data[0,t.index,:,0].imag)/4.0, 
+                                          np.sum(G_latt_CPT[FW,BW].data[0,t.index,:,0].real)/4.0, np.sum(G_latt_CPT[FW,BW].data[0,t.index,:,0].imag)/4.0))
+
+with open('data/tddt_CPT_k0.txt', 'w') as file:
+    # Loop to generate data
+    for t in t_mesh:
+        # Write data to the first and second columns
+        file.write("{} {} {} {}\n".format(G_latt_CPT[FW,FW].data[0,t.index,0,0,0].real, G_latt_CPT[FW,FW].data[0,t.index,0,0,0].imag, G_latt_CPT[FW,BW].data[0,t.index,0,0,0].real, G_latt_CPT[FW,BW].data[0,t.index,0,0,0].imag))
+
+with open('data/tddt_CPT_k1.txt', 'w') as file:
+    # Loop to generate data
+    for t in t_mesh:
+        # Write data to the first and second columns
+        file.write("{} {} {} {}\n".format(G_latt_CPT[FW,FW].data[0,t.index,1,0,0].real, G_latt_CPT[FW,FW].data[0,t.index,1,0,0].imag, G_latt_CPT[FW,BW].data[0,t.index,1,0,0].real, G_latt_CPT[FW,BW].data[0,t.index,1,0,0].imag))
+
+with open('data/tddt_CPT_k2.txt', 'w') as file:
+    # Loop to generate data
+    for t in t_mesh:
+        # Write data to the first and second columns
+        file.write("{} {} {} {}\n".format(G_latt_CPT[FW,FW].data[0,t.index,2,0,0].real, G_latt_CPT[FW,FW].data[0,t.index,2,0,0].imag, G_latt_CPT[FW,BW].data[0,t.index,2,0,0].real, G_latt_CPT[FW,BW].data[0,t.index,2,0,0].imag))
+
+with open('data/tddt_CPT_k3.txt', 'w') as file:
+    # Loop to generate data
+    for t in t_mesh:
+        # Write data to the first and second columns
+        file.write("{} {} {} {}\n".format(G_latt_CPT[FW,FW].data[0,t.index,3,0,0].real, G_latt_CPT[FW,FW].data[0,t.index,3,0,0].imag, G_latt_CPT[FW,BW].data[0,t.index,3,0,0].real, G_latt_CPT[FW,BW].data[0,t.index,3,0,0].imag))
+
+
+
+with open('data/tddt_01.txt', 'w') as file:
+    # Loop to generate data
+    file.write(f"# (FW,BW).local (FW,BW).local)\n")
+    for t in t_mesh:
+        # Write data to the first and second columnu
+        file.write("{} {} {} {}\n".format(G_latt_R[FW,FW].data[0,t.index,1,0,0].real, G_latt_R[FW,FW].data[0,t.index,1,0,0].imag, 
+                                          G_latt_R[FW,BW].data[0,t.index,1,0,0].real, G_latt_R[FW,BW].data[0,t.index,1,0,0].imag))
+
+with open('data/tddt_CPT_01.txt', 'w') as file:
+    # Loop to generate data
+    file.write(f"# (FW,BW).local (FW,BW).local)\n")
+    for t in t_mesh:
+        # Write data to the first and second columnu
+        file.write("{} {} {} {}\n".format(G_latt_CPT_R[FW,FW].data[0,t.index,1,0,0].real, G_latt_CPT_R[FW,FW].data[0,t.index,1,0,0].imag, 
+                                          G_latt_CPT_R[FW,BW].data[0,t.index,1,0,0].real, G_latt_CPT_R[FW,BW].data[0,t.index,1,0,0].imag))
+
+
+with open('data/tddt_T_t0_k0.txt', 'w') as file:
+    # Loop to generate data
+    for t in t_mesh:
+        # Write data to the first and second columns
+        file.write("{} {} {} {}\n".format(G_latt[FW,FW].data[0,t.index,0,0,0].real, G_latt[FW,FW].data[0,t.index,0,0,0].imag, G_latt[FW,BW].data[0,t.index,0,0,0].real, G_latt[FW,BW].data[0,t.index,0,0,0].imag))
+
+with open('data/tddt_T_t0_k1.txt', 'w') as file:
+    # Loop to generate data
+    for t in t_mesh:
+        # Write data to the first and second columns
+        file.write("{} {} {} {}\n".format(G_latt[FW,FW].data[0,t.index,1,0,0].real, G_latt[FW,FW].data[0,t.index,1,0,0].imag, G_latt[FW,BW].data[0,t.index,1,0,0].real, G_latt[FW,BW].data[0,t.index,1,0,0].imag))
+
+with open('data/tddt_T_t0_k2.txt', 'w') as file:
+    # Loop to generate data
+    for t in t_mesh:
+        # Write data to the first and second columns
+        file.write("{} {} {} {}\n".format(G_latt[FW,FW].data[0,t.index,2,0,0].real, G_latt[FW,FW].data[0,t.index,2,0,0].imag, G_latt[FW,BW].data[0,t.index,2,0,0].real, G_latt[FW,BW].data[0,t.index,2,0,0].imag))
+
+with open('data/tddt_T_t0_k3.txt', 'w') as file:
+    # Loop to generate data
+    for t in t_mesh:
+        # Write data to the first and second columns
+        file.write("{} {} {} {}\n".format(G_latt[FW,FW].data[0,t.index,3,0,0].real, G_latt[FW,FW].data[0,t.index,3,0,0].imag, G_latt[FW,BW].data[0,t.index,3,0,0].real, G_latt[FW,BW].data[0,t.index,3,0,0].imag))
+
+#print('FW,FW 0 0: ', G_latt[FW,FW].data[0,:,0,0,0])
+#print('FW,BW 0 0: ', G_latt[FW,BW].data[0,:,0,0,0])
+#print('BW,BW 0 0: ', G_latt[BW,BW].data[0,:,0,0,0])
+#
+#print('FW,FW 1 0: ', G_latt[FW,FW].data[1,:,0,0,0])
+#print('FW,BW 1 0: ', G_latt[FW,BW].data[1,:,0,0,0])
+#print('BW,BW 1 0: ', G_latt[BW,BW].data[1,:,0,0,0])
+#
+#print('FW,FW 2 0: ', G_latt[FW,FW].data[2,:,0,0,0])
+#print('FW,BW 2 0: ', G_latt[FW,BW].data[2,:,0,0,0])
+#print('BW,BW 2 0: ', G_latt[BW,BW].data[2,:,0,0,0])
+#
+#print('FW,FW 0 1: ', G_latt[FW,FW].data[0,:,1,0,0])
+#print('FW,BW 0 1: ', G_latt[FW,BW].data[0,:,1,0,0])
+#print('BW,BW 0 1: ', G_latt[BW,BW].data[0,:,1,0,0])
+#
+#print('FW,FW 1 1: ', G_latt[FW,FW].data[1,:,1,0,0])
+#print('FW,BW 1 1: ', G_latt[FW,BW].data[1,:,1,0,0])
+#print('BW,BW 1 1: ', G_latt[BW,BW].data[1,:,1,0,0])
+#
+#print('FW,FW 2 1: ', G_latt[FW,FW].data[2,:,1,0,0])
+#print('FW,BW 2 1: ', G_latt[FW,BW].data[2,:,1,0,0])
+#print('BW,BW 2 1: ', G_latt[BW,BW].data[2,:,1,0,0])
+
 
 """
 A = KeldyshGF(mesh=ttt_mesh, arg_index_shapes=((2, 3), (2, 4), (2, 5)))

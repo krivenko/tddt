@@ -1,0 +1,25 @@
+--t_max 10.0
+--n_t 51
+--n_ti 5001          # fine interpolation mesh for TInterp
+
+--n_k 2              # k-points per dimension (n_k x n_k BZ mesh)
+--t_nn 1.0           # nearest-neighbor hopping
+--t_nnn 0.0          # next-nearest-neighbor hopping
+
+--A 0.0              # vector potential amplitude
+--Omega 4.0          # laser/drive frequency
+
+--U 6.0              # Hubbard U at t=0 (before quench)
+--U1 4.0             # Hubbard U at t>0 (after quench)
+--V 0.2              # non-local interaction strength
+
+--T 0.01             # temperature
+
+--ex 0.0             # bath site 3 energy level (absolute)
+--exx 3.0            # bath sites 1,2 energy levels ±exx (absolute)
+--tx 0.7             # hopping amplitude correlated site → bath site 3
+--txx 1.0            # hopping amplitude correlated site → bath sites 1,2
+
+--output_dir data/cluster2x2
+--output_name cluster2x2
+# --simple_output    # uncomment to write text files instead of HDF5

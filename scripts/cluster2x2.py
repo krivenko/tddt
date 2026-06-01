@@ -18,7 +18,19 @@
 #
 # ##############################################################################
 
+import argparse
+import shlex
+import sys
 import os
+import time
+
+# Add repo root to sys.path so that `tddt` and `scripts` are importable
+# regardless of where the script is invoked from.
+_script_dir = os.path.dirname(os.path.abspath(__file__))
+_repo_root  = os.path.dirname(_script_dir)
+if _repo_root not in sys.path:
+    sys.path.insert(0, _repo_root)
+
 import numpy as np
 
 import triqs.utility.mpi  # noqa: F401
@@ -27,32 +39,113 @@ from triqs.lattice import BravaisLattice, BrillouinZone
 
 from realevol.tinterp import TInterp as ti
 
-from tddt.keldysh import Branch
 from tddt.dtrilex import DualTRILEX, Channel
 
 from tddt.lattice import local_part, lattice_fourier, SpacialArgs
 from tddt.models import FiniteCluster
 
+from scripts.utilities import write_keldysh_gf_file, save_keldysh_gf_2pt_h5
+
 np.set_printoptions(threshold=np.inf, linewidth=np.inf)
+
+# -----------------------------------------------------------------------
+# MPI setup
+# -----------------------------------------------------------------------
+_has_mpi = False
+_comm    = None
+_rank    = 0
+
+try:
+    from mpi4py import MPI
+    if not MPI.Is_initialized():
+        MPI.Init()
+    _has_mpi = True
+    _comm    = MPI.COMM_WORLD
+    _rank    = _comm.Get_rank()
+except Exception:
+    pass
+
+
+def get_time():
+    if _has_mpi:
+        return MPI.Wtime()
+    return time.perf_counter()
+
+
+# -----------------------------------------------------------------------
+# Argument parser
+# -----------------------------------------------------------------------
+_parser = argparse.ArgumentParser(
+    description="D-TRILEX single-shot driver for the 2×2 plaquette cluster"
+)
+_parser.add_argument("--t_max",       type=float, default=10.0)
+_parser.add_argument("--n_t",         type=int,   default=51)
+_parser.add_argument("--n_ti",        type=int,   default=5001,
+                     help="Fine interpolation mesh size")
+_parser.add_argument("--n_k",         type=int,   default=2)
+_parser.add_argument("--t_nn",        type=float, default=1.0)
+_parser.add_argument("--t_nnn",       type=float, default=0.0)
+_parser.add_argument("--A",           type=float, default=0.0)
+_parser.add_argument("--Omega",       type=float, default=4.0)
+_parser.add_argument("--U",           type=float, default=6.0)
+_parser.add_argument("--U1",          type=float, default=4.0)
+_parser.add_argument("--V",           type=float, default=0.2)
+_parser.add_argument("--T",           type=float, default=0.01)
+_parser.add_argument("--ex",          type=float, default=0.0)
+_parser.add_argument("--exx",         type=float, default=3.0)
+_parser.add_argument("--tx",          type=float, default=0.7)
+_parser.add_argument("--txx",         type=float, default=1.0)
+_parser.add_argument("--output_dir",  type=str,   default="data")
+_parser.add_argument("--output_name", type=str,   default="cluster2x2")
+_parser.add_argument("--simple_output", action="store_true",
+                     help="Write plain-text files instead of HDF5")
+
+# MPI-safe: rank 0 reads param file (optional first positional arg), broadcasts
+if _rank == 0:
+    if len(sys.argv) > 1 and not sys.argv[1].startswith('--'):
+        with open(sys.argv[1]) as f:
+            lines = []
+            for line in f:
+                line = line.split("#", 1)[0].strip()
+                if line:
+                    lines.append(line)
+        _arg_list = shlex.split(" ".join(lines))
+    else:
+        _arg_list = sys.argv[1:]
+    _args = _parser.parse_args(_arg_list)
+else:
+    _args = None
+
+if _has_mpi:
+    _args = _comm.bcast(_args, root=0)
+
+t_max       = _args.t_max
+n_t         = _args.n_t
+n_ti        = _args.n_ti
+n_k         = _args.n_k
+t_nn        = _args.t_nn
+t_nnn       = _args.t_nnn
+A           = _args.A
+Omega       = _args.Omega
+U           = _args.U
+U1          = _args.U1
+V           = _args.V
+T           = _args.T
+ex          = _args.ex
+exx         = _args.exx
+tx          = _args.tx
+txx         = _args.txx
+output_dir  = _args.output_dir
+output_name = _args.output_name
 
 ############################ Time meshes #######################################
 
-t_max = 10.0
-n_t = 51
 # Time mesh for correlation functions
 t_mesh = MeshReTime(0, t_max, n_t)
 # Time mesh used to construct interpolators
-ti_mesh = MeshReTime(0, t_max, 5001)
+ti_mesh = MeshReTime(0, t_max, n_ti)
 
 ########################## Lattice problem #####################################
-
-n_k = 2             # Number of k-points along each dimension
-t_nn = 1.0          # Nearest neighbor hopping
-t_nnn = 0.0         # Next nearest neighbor hopping
-
-# Vector potential: Amplitude and frequency
-A = 0.0
-Omega = 4.0
 
 lat = BravaisLattice(units=[(1, 0, 0), (0, 1, 0)])  # 2D square lattice
 bz_mesh = MeshBrZone(BrillouinZone(lat), n_k)       # k-mesh on 1BZ; 0 - 2pi
@@ -72,9 +165,6 @@ for t, k in eps_tk.mesh:
 
 # Interaction U^\varsigma_{l_1,l_2,l_3,l_4}(t, q)
 
-U = 6.0             # Hubbard interaction at t=0
-U1 = 4.0            # Hubbard interaction at t>0
-V = 0.2             # Non-local interaction strength
 Uch = U1 / 2
 Usp = -U1 / 2
 
@@ -84,7 +174,7 @@ U_tq = Gf(
 )
 
 for t, q in U_tq.mesh:
-    V_q = 2 * V * (np.cos(k[0]) + np.cos(k[1]))
+    V_q = 2 * V * (np.cos(q[0]) + np.cos(q[1]))
     U_tq[t, q][Channel.CHARGE.value] = Uch + V_q
     U_tq[t, q][Channel.SPIN.value] = Usp + V_q
 
@@ -99,30 +189,19 @@ U_dc[Channel.SPIN.value] = Usp
 mu = 0.5 * U        # Chemical potential at t=0
 mu1 = 0.5 * U1      # Chemical potential at t>0
 
-# Energy levels of uncorrelated plaquette sites are +exx, -exx, ex
-ex = 0.0
-exx = 3.0
-
-# Hopping amplitudes between site 0 and the uncorrelated sites are txx, txx, tx
-tx = 0.7 * t_nn
-txx = 1.0 * t_nn
-
 # Time-dependent vector potential (x- and y-component)
 Ax_t = ti(ti_mesh, [A * np.cos(Omega * t) for t in ti_mesh])
 Ay_t = ti(ti_mesh, [A * np.cos(Omega * t) for t in ti_mesh])
-
-# Temperature
-T = 0.01
 
 # Reference system
 model_ref = FiniteCluster(
     # 2x2 plaquette
     [(0, 0, 0), (0, 1, 0), (1, 0, 0), (1, 1, 0)],
     # Hopping matrix
-    hopping=[[-mu, txx, txx,  tx],                            # noqa: E202, E241
-             [txx, exx, 0,    0 ],                            # noqa: E202, E241
-             [txx, 0,   -exx, 0 ],                            # noqa: E202, E241
-             [tx,  0,   0,    ex]],                           # noqa: E202, E241
+    hopping=[[-mu,  txx,  txx,  tx],                            # noqa: E202, E241
+             [ txx,  exx,  0,    0 ],                           # noqa: E202, E241
+             [ txx,  0,   -exx,  0 ],                           # noqa: E202, E241
+             [ tx,   0,    0,    ex]],                          # noqa: E202, E241
     # Local interaction
     local_int=[U, 0, 0, 0],
     # Vector potential: Components along the two Cartesian axes
@@ -132,6 +211,8 @@ model_ref = FiniteCluster(
 theory = DualTRILEX(model_ref, t_mesh,
                     imp_states_up=[('up', 0)],
                     imp_states_dn=[('dn', 0)])
+
+t_start = get_time()
 
 # Compute initial thermal state of the reference system
 theory.compute_ref_init_state(T, verbosity=1)
@@ -145,6 +226,8 @@ print("Computing correlators of the reference system...")
 theory.compute_ref_correlators(verbosity=2,
                                hamiltonian_interpol='Trapezoid',
                                lanczos_min_matrix_size=40)
+t_ref_done = get_time() - t_start
+print(f"Reference correlators done  [Time: {t_ref_done:.3f} s]")
 
 ###################### Construct a hybridization function ######################
 
@@ -155,12 +238,19 @@ Delta = model_ref.hybridization(theory.t_mesh, [0], [1, 2, 3], T=T)
 ########################### Solve D-TRILEX equations ###########################
 
 print("Computing bare dual lines and the vertex...")
+t_bare_start = get_time()
 theory.compute_bare_lines_vertex(eps_tk, Delta, U_tq, U_dc)
+t_bare = get_time() - t_bare_start
+print(f"Bare lines done  [Time: {t_bare:.3f} s]")
 
 print("Computing dual diagrams...")
+t_diag_start = get_time()
 theory.compute_diagrams()
+t_diag = get_time() - t_diag_start
+print(f"Diagrams done  [Time: {t_diag:.3f} s]")
 
 print("Computing lattice Green's functions...")
+t_lat_start = get_time()
 g_tk = theory.compute_lattice_gf()
 g_tr = lattice_fourier(g_tk, apply_to=SpacialArgs.BRZONE)
 
@@ -174,11 +264,19 @@ gd0_full_tk = gd0_full_tk @ theory.g_imp
 
 gd0_full_tr = lattice_fourier(gd0_full_tk, apply_to=SpacialArgs.BRZONE)
 
-######################### Write results to text files ##########################
+t_lat = get_time() - t_lat_start
+t_total = get_time() - t_start
+print(f"Lattice GFs done  [Time: {t_lat:.3f} s]")
+print()
+print("=== TIMING SUMMARY ===")
+print(f"Reference correlators:  {t_ref_done:.3f} s")
+print(f"Bare lines + vertex:    {t_bare:.3f} s")
+print(f"Dual diagrams:          {t_diag:.3f} s")
+print(f"Lattice GFs:            {t_lat:.3f} s")
+print(f"TOTAL TIME:             {t_total:.3f} s")
+print("======================")
 
-# Create the data directory
-os.makedirs("data", exist_ok=True)
-
+######################### Write results ########################################
 
 def write_keldysh_gf_file(filename, g, spc_point=None, target_indices=()):
     """
